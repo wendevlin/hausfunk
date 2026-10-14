@@ -109,10 +109,17 @@ fun HausfunkNavHost(app: HausfunkApplication, windowSizeClass: WindowSizeClass) 
                 deviceName = loaded.deviceName,
                 deviceId = loaded.identityDeviceId,
                 pairedDevices = trusted,
+                alarmGraceSeconds = loaded.alarmGraceSeconds,
                 onBack = { navController.popBackStack() },
+                onAlarmGrace = { seconds -> app.appScope.launch { app.settings.setAlarmGrace(seconds) } },
                 onRenameSelf = { name -> app.appScope.launch { app.settings.setDeviceName(name) } },
                 onRenamePeer = { id, name -> app.appScope.launch { app.trustStore.rename(id, name) } },
-                onRemovePeer = { id -> app.appScope.launch { app.trustStore.remove(id) } },
+                onRemovePeer = { id ->
+                    app.appScope.launch {
+                        app.trustStore.remove(id)
+                        app.settings.forgetSound(id)
+                    }
+                },
             )
         }
     }

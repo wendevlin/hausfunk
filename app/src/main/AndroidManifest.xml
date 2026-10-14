@@ -55,5 +55,8 @@
             android:name=".service.ParentService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
+        <receiver
+            android:name=".alarm.AcknowledgeReceiver"
+            android:exported="false" />
     </application>
 </manifest>

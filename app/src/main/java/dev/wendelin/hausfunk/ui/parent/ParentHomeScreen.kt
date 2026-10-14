@@ -5,6 +5,13 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
+import dev.wendelin.hausfunk.data.SoundPrefs
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -91,8 +98,8 @@ fun ParentRoute(
     val newBabies = found.filter { it.deviceId !in trustedIds }
 
     fun watch(deviceId: String) {
-        // Tapping the baby that is already on screen must not start over.
-        if (deviceId == watchedId && (state is ParentState.Connecting || state is ParentState.Connected)) return
+        // Tapping the baby that is already being watched must not start over; it reconnects on its own.
+        if (deviceId == watchedId) return
         val baby = found.firstOrNull { it.deviceId == deviceId } ?: return
         ParentService.watch(context, baby)
     }
@@ -128,14 +135,36 @@ fun ParentRoute(
             // Picture-in-picture: the video and nothing else.
             Box(Modifier.fillMaxSize().background(WatchColors.background)) {
                 VideoView(s.eglBase, s::attach, s::detach, Modifier.fillMaxSize(), onAspectRatio = { aspectRatio = it })
+                // Plus the last sound, and a red dot while the connection is down.
+                val lastSound by s.lastSound.collectAsState()
+                Row(
+                    Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(4.dp)
+                        .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (state !is ParentState.Connected) {
+                        Box(
+                            Modifier
+                                .padding(end = 4.dp)
+                                .size(8.dp)
+                                .background(MaterialTheme.colorScheme.error, CircleShape),
+                        )
+                    }
+                    Text(lastSoundText(lastSound), color = WatchColors.onBackground, style = MaterialTheme.typography.labelSmall)
+                }
             }
             return
         }
         BackHandler { stopWatching() }
+        val settings by app.settings.settings.collectAsState(initial = null)
         WatchScreen(
             s,
             state,
-            onRetry = { watchedId.let(::watch) },
+            soundPrefs = settings?.soundFor(watchedId) ?: SoundPrefs(),
+            onSoundPrefs = { prefs -> app.appScope.launch { app.settings.setSound(watchedId, prefs) } },
             onClose = ::stopWatching,
             onAspectRatio = { aspectRatio = it },
             onVideoBounds = { videoBounds = it },

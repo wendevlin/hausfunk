@@ -8,6 +8,10 @@ import java.net.Inet4Address
 import java.net.InetAddress
 import java.util.concurrent.Executor
 
+/** Android 12 and 13 report no address changes; there a lost baby is searched for again regularly. */
+val nsdReportsAddressChanges: Boolean
+    get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
+
 /**
  * Resolves services found by NsdManager discovery. Android 14+ keeps one callback per service and
  * reports address changes. Android 12 and 13 can resolve only one service at a time, so requests

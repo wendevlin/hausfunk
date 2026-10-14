@@ -25,7 +25,16 @@ import dev.wendelin.hausfunk.pairing.PairedPeer
 import dev.wendelin.hausfunk.pairing.PairingRunner
 import android.os.SystemClock
 import dev.wendelin.hausfunk.pairing.PairingState
+import dev.wendelin.hausfunk.signaling.ControlMessage
+import dev.wendelin.hausfunk.signaling.Decoded
+import dev.wendelin.hausfunk.signaling.Level
+import dev.wendelin.hausfunk.signaling.MessageCodec
 import dev.wendelin.hausfunk.signaling.PairCommit
+import dev.wendelin.hausfunk.signaling.Ping
+import dev.wendelin.hausfunk.signaling.Pong
+import dev.wendelin.hausfunk.signaling.Status
+import dev.wendelin.hausfunk.signaling.Watching
+import java.nio.ByteBuffer
 import org.webrtc.VideoSink
 import java.io.IOException
 import kotlin.concurrent.thread
@@ -70,7 +79,8 @@ data class BabyState(
 
 /**
  * Baby side: captures camera and microphone once and streams them to one paired parent (several
- * parents arrive in phase 6). An unknown parent may ask to pair at any time; nothing is stored
+ * parents arrive in phase 6), with battery and sound level on the data channel. An unknown parent
+ * may ask to pair at any time; nothing is stored
  * unless the user confirms the emojis on both phones. Owns every WebRTC object; all of them are
  * touched only on the session's own thread. [stop] is final; create a new session to start again.
  */
@@ -109,6 +119,9 @@ class BabySession(
     private var handshaking = 0
     private val previewSinks = mutableSetOf<VideoSink>()
 
+    private val battery = BatteryWatcher(this.context) { executor.execute { peer?.let(::sendStatus) } }
+    @Volatile private var levelMeter: LevelMeter? = null
+
     /** Devices whose last pairing attempt failed, until when they are ignored (elapsed ms). */
     private val pairingBlockedUntil = mutableMapOf<String, Long>()
 
@@ -123,6 +136,9 @@ class BabySession(
             server = s
             advertise()
             thread(name = "baby-accept") { acceptLoop(s) }
+            battery.start()
+            executor.schedule(LEVEL_INTERVAL_MS, ::sendLevel)
+            executor.schedule(STATUS_INTERVAL_MS, ::sendStatusPeriodically)
         } catch (e: IOException) {
             Log.w(TAG, "could not start", e)
             _state.value = _state.value.copy(failed = true)
@@ -137,6 +153,7 @@ class BabySession(
         if (stopped) return@execute
         stopped = true
         pairing?.cancel()
+        battery.stop()
         advertiser.stop()
         server?.close()
         peer?.let { close(it, sendBye = true) }
@@ -181,6 +198,11 @@ class BabySession(
             // Quiet sounds must not be swallowed by processing meant for calls.
             .setUseHardwareAcousticEchoCanceler(false)
             .setUseHardwareNoiseSuppressor(false)
+            // The raw capture, before any processing, measures the level parents see.
+            .setSamplesReadyCallback { samples ->
+                val meter = levelMeter ?: LevelMeter(samples.sampleRate).also { levelMeter = it }
+                meter.add(samples.data, samples.channelCount)
+            }
             .createAudioDeviceModule()
         factory = PeerConnectionFactory.builder()
             .setAudioDeviceModule(audioModule)
@@ -365,7 +387,7 @@ class BabySession(
                     }
                     return
                 }
-                if (message is Answer) p.connection.setReadTimeout(0) // set up; may idle from now on
+                if (message is Answer) p.connection.setReadTimeout(0) // set up; liveness comes from pings
                 executor.execute { if (peer === p) handle(p, message) }
             }
         } catch (e: IOException) {
@@ -382,6 +404,9 @@ class BabySession(
                     WebRtc.sdpObserver(executor, { fail(p, it) }) {
                         if (peer === p) {
                             p.ice.flush(pc)
+                            // The parent pings once the data channel is open; allow time for ICE.
+                            p.lastPing = SystemClock.elapsedRealtime() + SETUP_GRACE_MS
+                            checkLiveness(p)
                             limitVideo(p)
                             // A home Wi-Fi can do far more than WebRTC's cautious default start;
                             // its bandwidth estimate still lowers this when the link cannot.
@@ -414,6 +439,7 @@ class BabySession(
             p.video = video
         }
         p.control = pc.createDataChannel("control", DataChannel.Init().apply { ordered = true })
+            .also { it.registerObserver(controlObserver(p, it)) }
         pc.createOffer(
             WebRtc.sdpObserver(executor, { fail(p, it) }) { offer ->
                 if (peer !== p || offer == null) return@sdpObserver
@@ -427,6 +453,76 @@ class BabySession(
             MediaConstraints(),
         )
         _state.value = _state.value.copy(parentName = p.name)
+    }
+
+    private fun controlObserver(p: Peer, channel: DataChannel) = object : DataChannel.Observer {
+        override fun onBufferedAmountChange(previousAmount: Long) = Unit
+
+        override fun onStateChange() {
+            if (channel.state() == DataChannel.State.OPEN) executor.execute { if (peer === p) sendStatus(p) }
+        }
+
+        override fun onMessage(buffer: DataChannel.Buffer) {
+            // The buffer is only valid during this call.
+            val text = Charsets.UTF_8.decode(buffer.data).toString()
+            executor.execute { if (peer === p) onControl(p, text) }
+        }
+    }
+
+    private fun onControl(p: Peer, text: String) {
+        when (val decoded = MessageCodec.decodeControl(text)) {
+            is Decoded.Message -> when (decoded.message) {
+                Ping -> {
+                    p.lastPing = SystemClock.elapsedRealtime()
+                    sendControl(p, Pong)
+                    // The parent listens by now; a status sent on open may have come too early.
+                    if (!p.statusSent) sendStatus(p)
+                }
+                is Watching -> Unit // video gating arrives in phase 6
+                else -> Unit
+            }
+            is Decoded.Unknown -> Unit
+            Decoded.Malformed -> if (!p.loggedMalformed) {
+                p.loggedMalformed = true
+                Log.w(TAG, "malformed control message")
+            }
+        }
+    }
+
+    /** Drops a parent that stopped pinging: it is gone, even if the sockets have not noticed. */
+    private fun checkLiveness(p: Peer) {
+        if (peer !== p) return
+        if (SystemClock.elapsedRealtime() - p.lastPing > LIVENESS_TIMEOUT_MS) {
+            Log.i(TAG, "parent stopped pinging")
+            return close(p, sendBye = true)
+        }
+        executor.schedule(PING_CHECK_MS) { checkLiveness(p) }
+    }
+
+    private fun sendControl(p: Peer, message: ControlMessage) {
+        val channel = p.control ?: return
+        if (channel.state() != DataChannel.State.OPEN) return
+        val bytes = MessageCodec.encode(message).toByteArray(Charsets.UTF_8)
+        channel.send(DataChannel.Buffer(ByteBuffer.wrap(bytes), false))
+    }
+
+    private fun sendStatus(p: Peer) {
+        val b = battery.current() ?: Battery(-1, false)
+        sendControl(p, Status(battery = b.percent, charging = b.charging, parents = 1, thermalReduced = false))
+        p.statusSent = true
+    }
+
+    private fun sendStatusPeriodically() {
+        if (stopped) return
+        peer?.let(::sendStatus)
+        executor.schedule(STATUS_INTERVAL_MS, ::sendStatusPeriodically)
+    }
+
+    private fun sendLevel() {
+        if (stopped) return
+        val db = levelMeter?.take()
+        if (db != null) peer?.let { sendControl(it, Level(Math.round(db * 10) / 10f)) }
+        executor.schedule(LEVEL_INTERVAL_MS, ::sendLevel)
     }
 
     /** Hardware H.264 where the phone has it, otherwise VP8. */
@@ -488,6 +584,7 @@ class BabySession(
             }
         }
         p.connection.close()
+        p.control?.unregisterObserver()
         p.control?.dispose()
         p.pc?.dispose()
         p.pc = null
@@ -500,6 +597,11 @@ class BabySession(
         var video: RtpTransceiver? = null
         var control: DataChannel? = null
         val ice = PendingIce()
+
+        /** Elapsed time of the last ping; set into the future while the connection is set up. */
+        var lastPing = Long.MAX_VALUE
+        var loggedMalformed = false
+        var statusSent = false
     }
 
     private companion object {
@@ -515,5 +617,10 @@ class BabySession(
         const val MAX_BITRATE_BPS = 4_000_000
         const val PAIRING_BLOCK_MS = 60_000L
         const val MAX_CONNECTIONS = 8
+        const val LEVEL_INTERVAL_MS = 200L
+        const val STATUS_INTERVAL_MS = 30_000L
+        const val PING_CHECK_MS = 2_000L
+        const val LIVENESS_TIMEOUT_MS = 6_000L
+        const val SETUP_GRACE_MS = 15_000L
     }
 }

@@ -110,6 +110,12 @@ class BabyFinder(context: Context) {
         publish()
     }
 
+    /** Starts over, so every service is resolved again (for phones that report no changes). */
+    fun refresh() {
+        stop()
+        start()
+    }
+
     /** Stops discovery for good. */
     fun release() {
         stop()

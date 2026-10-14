@@ -126,6 +126,34 @@ Deviations from, or clarifications of, the implementation plan. Newest first.
   (below 25 %) with a "Louder" button. Monitoring sound plays as media, so that stream is checked;
   the plan's alarm-volume warning (phase 5) is separate.
 
+## Phase 5
+
+- **The alarm plays the phone's alarm sound** (falling back to the ringtone, then the
+  notification sound) on the alarm stream, looping, with vibration as an alarm. No bundled sound
+  and no sound picker yet; both belong to the alarm settings in phase 7.
+- **"Acknowledge" in the alarm notification goes to a small non-exported broadcast receiver**
+  instead of the parent service, so tapping it can never start or restart the service.
+- **Noise threshold, gate and hold time sit in a sheet on the watch screen** (tune icon), next to
+  the live level, instead of the settings screen: the plan asks for the slider beside a live
+  meter, which only the watch screen has. They are stored per baby device in the settings file;
+  removing a paired device forgets them. The alarm grace period is in the settings screen.
+- **Sound event**: two level messages in a row at or above the threshold (each covers 200 ms, so
+  at least ~300 ms). "Last sound" is the latest moment of the latest event. Default threshold
+  -40 dBFS, scale -80 to 0, slider -70 to -10.
+- **The level message carries the loudest 100 ms window since the previous message** (plan:
+  smoothed over 100 ms), so a short cry between two messages still shows.
+- **Busy is retried every 10 s.** If the parent had been connected before, busy counts as a lost
+  connection and the alarm covers it.
+- **A parent service restarted by the system (redelivered intent) counts as already connected**,
+  so if the baby cannot be reached the alarm rings after the grace period.
+- **The ongoing notification shows the last sound as its time stamp** ("Last sound · 4 min"),
+  which the system keeps current, instead of rewriting the text every minute. While the link is
+  down it says "No connection to … Reconnecting".
+- **Battery warnings** (below 20 % while not charging, and on unplugging) are notifications on a
+  new "Warnings" channel, once per crossing; the watch screen shows the percentage all the time.
+- **Android 12–13**: while reconnecting, discovery is restarted every 30 s, since those versions
+  report no address changes. A new default network triggers an immediate reconnect attempt.
+
 ## Open points for later phases
 
 - **F-Droid and prebuilt libwebrtc.** F-Droid builds from source and is strict about prebuilt

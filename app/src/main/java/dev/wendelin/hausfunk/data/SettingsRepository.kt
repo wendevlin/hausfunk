@@ -40,4 +40,21 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
     suspend fun dismissIdentityResetNotice() {
         store.updateData { it.copy(identityResetNotice = false) }
     }
+
+    suspend fun setAlarmGrace(seconds: Int) {
+        store.updateData { it.copy(alarmGraceSeconds = seconds.coerceIn(Settings.ALARM_GRACE_RANGE)) }
+    }
+
+    suspend fun setSound(deviceId: String, prefs: SoundPrefs) {
+        val clean = prefs.copy(
+            thresholdDbfs = prefs.thresholdDbfs.coerceIn(SoundPrefs.THRESHOLD_RANGE),
+            holdSeconds = prefs.holdSeconds.coerceIn(SoundPrefs.HOLD_RANGE),
+        )
+        store.updateData { it.copy(sound = it.sound + (deviceId to clean)) }
+    }
+
+    /** Forgets the sound settings of a device that is no longer paired. */
+    suspend fun forgetSound(deviceId: String) {
+        store.updateData { it.copy(sound = it.sound - deviceId) }
+    }
 }

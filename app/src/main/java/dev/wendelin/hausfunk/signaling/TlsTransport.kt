@@ -45,10 +45,18 @@ class TlsTransport(
         return Server(serverSocket, allowPairing)
     }
 
-    /** Parent side: connects to a paired baby; anything but [expectedDeviceId] is rejected. */
-    fun connect(address: InetAddress, port: Int, expectedDeviceId: String): SignalingConnection {
+    /**
+     * Parent side: connects to a paired baby; anything but [expectedDeviceId] is rejected.
+     * [connectTimeoutMs] limits only the TCP connect, so a stale address fails fast.
+     */
+    fun connect(
+        address: InetAddress,
+        port: Int,
+        expectedDeviceId: String,
+        connectTimeoutMs: Int = HANDSHAKE_TIMEOUT_MS,
+    ): SignalingConnection {
         val trust = PinningTrustManager { it == expectedDeviceId && it in trustedIds() }
-        return connect(address, port, trust, PeerClass.TRUSTED)
+        return connect(address, port, trust, PeerClass.TRUSTED, connectTimeoutMs)
     }
 
     /**
@@ -56,13 +64,19 @@ class TlsTransport(
      * comparison is what authenticates it; this context serves this one connection.
      */
     fun connectForPairing(address: InetAddress, port: Int): SignalingConnection =
-        connect(address, port, PinningTrustManager { true }, PeerClass.PAIRING)
+        connect(address, port, PinningTrustManager { true }, PeerClass.PAIRING, HANDSHAKE_TIMEOUT_MS)
 
-    private fun connect(address: InetAddress, port: Int, trust: X509ExtendedTrustManager, peerClass: PeerClass): SignalingConnection {
+    private fun connect(
+        address: InetAddress,
+        port: Int,
+        trust: X509ExtendedTrustManager,
+        peerClass: PeerClass,
+        connectTimeoutMs: Int,
+    ): SignalingConnection {
         val socket = context(trust).socketFactory.createSocket() as SSLSocket
         try {
             socket.enabledProtocols = PROTOCOLS
-            socket.connect(InetSocketAddress(address, port), HANDSHAKE_TIMEOUT_MS)
+            socket.connect(InetSocketAddress(address, port), connectTimeoutMs)
             return handshake(socket, peerClass)
         } catch (e: IOException) {
             socket.close()

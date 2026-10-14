@@ -1,7 +1,7 @@
 # Hausfunk wire protocol (version 1)
 
-Kept in sync with the code. Implemented: discovery, mutual TLS, pairing and signaling (phase 3).
-The data channel exists but carries no messages yet (phase 5).
+Kept in sync with the code. Implemented: discovery, mutual TLS, pairing and signaling (phase 3),
+the data channel with liveness, status and sound level (phase 5).
 
 ## Discovery
 
@@ -36,7 +36,7 @@ Implemented in `signaling/TlsTransport.kt`; trust decisions in `identity/TlsKeys
   `PAIRING` connection.
 - Read timeout 30 s while the session is set up (until the baby has the `answer`, the parent
   the `offer`). After that the socket may stay idle; liveness comes from the data channel
-  `ping`/`pong` (phase 5) and the ICE state.
+  `ping`/`pong` and the ICE state (see "Data channel").
 - Framing: 4-byte big-endian length prefix, then UTF-8 JSON, maximum 64 KiB per frame.
   Unknown message types are ignored; malformed or oversize frames close the connection.
 - Every message is `{ "type": ..., ... }`. The sender's device ID travels in `hello` and must equal
@@ -101,3 +101,26 @@ Messages: `pair_commit { commitment }`, `pair_reveal { nonce, deviceId, name }`,
 | `status` | baby → parent | `battery` (%), `charging`, `parents` (count), `thermalReduced`; every 30 s and on change |
 | `level` | baby → parent | `dbfs`, 5 times per second |
 | `ping` / `pong` | parent → baby / baby → parent | every 2 s; 6 s without one means the link is lost |
+
+## Data channel
+
+One ordered, reliable data channel named `control`, created by the baby. Each message is one
+UTF-8 JSON text `{ "type": ..., ... }`, decoded into a typed class; unknown types are ignored,
+malformed ones dropped (logged once per connection).
+
+| Message | Direction | Content |
+| --- | --- | --- |
+| `ping` / `pong` | parent → baby / baby → parent | every 2 s |
+| `status` | baby → parent | `battery` (0–100, -1 unknown), `charging`, `parents`, `thermalReduced`; on open, after the first `ping`, every 30 s and on every battery change |
+| `level` | baby → parent | `dbfs`: the loudest 100 ms RMS window of the raw capture since the last message, 5 times per second, -90 to 0 |
+| `watching` | parent → baby | reserved for phase 6, ignored |
+
+Liveness and reconnection:
+
+- The parent counts the link as lost after 6 s without `pong`, on ICE `disconnected`/`failed`,
+  when the signaling socket closes, or if no `pong` arrived within 20 s of starting the attempt.
+- The baby drops a parent after 6 s without `ping` (15 s allowed for setup after the `answer`).
+- The parent reconnects on its own with a full new connection: first to the address that last
+  worked (3 s connect timeout) if discovery now reports a different one, then to the discovered
+  one. Backoff 1, 2, 4, 8, then every 10 s; a new network triggers an immediate attempt.
+  After `busy` the parent retries every 10 s.

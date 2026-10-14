@@ -25,7 +25,7 @@ import androidx.compose.ui.unit.dp
 import dev.wendelin.hausfunk.R
 import kotlinx.coroutines.delay
 
-/** Media volume as the parent hears the baby: muted, too quiet to rely on, or fine. */
+/** A volume as it matters for monitoring: muted, too quiet to rely on, or fine. */
 enum class Loudness { MUTED, QUIET, OK }
 
 /** Below this share of the maximum, a crying baby may go unheard. */
@@ -33,19 +33,20 @@ private const val QUIET_SHARE = 0.25f
 private const val POLL_MS = 1_000L
 
 /**
- * Re-reads the media volume every second while shown (Android has no public callback for volume
- * changes). The monitoring sound plays as media, so that is the stream that matters.
+ * Re-reads [stream]'s volume every second while shown (Android has no public callback for volume
+ * changes). The baby's sound plays as media ([AudioManager.STREAM_MUSIC]), the connection-loss
+ * alarm on [AudioManager.STREAM_ALARM].
  */
 @Composable
-fun rememberLoudness(): Loudness {
+fun rememberLoudness(stream: Int): Loudness {
     val audio = LocalContext.current.getSystemService(AudioManager::class.java)
     var loudness by remember { mutableStateOf(Loudness.OK) }
-    LaunchedEffect(audio) {
+    LaunchedEffect(audio, stream) {
         while (true) {
-            val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
-            val volume = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+            val max = audio.getStreamMaxVolume(stream).coerceAtLeast(1)
+            val volume = audio.getStreamVolume(stream)
             loudness = when {
-                volume == 0 || audio.isStreamMute(AudioManager.STREAM_MUSIC) -> Loudness.MUTED
+                volume == 0 || audio.isStreamMute(stream) -> Loudness.MUTED
                 volume.toFloat() / max < QUIET_SHARE -> Loudness.QUIET
                 else -> Loudness.OK
             }
@@ -55,9 +56,10 @@ fun rememberLoudness(): Loudness {
     return loudness
 }
 
-/** A small banner on the watch screen when the sound is muted or very quiet, with "Louder". */
+/** A small banner on the watch screen when [stream] is muted or very quiet, with "Louder". */
 @Composable
-fun VolumeWarning(loudness: Loudness, modifier: Modifier = Modifier) {
+fun VolumeWarning(stream: Int, modifier: Modifier = Modifier) {
+    val loudness = rememberLoudness(stream)
     if (loudness == Loudness.OK) return
     val audio = LocalContext.current.getSystemService(AudioManager::class.java)
     Row(
@@ -72,7 +74,14 @@ fun VolumeWarning(loudness: Loudness, modifier: Modifier = Modifier) {
             tint = MaterialTheme.colorScheme.onErrorContainer,
         )
         Text(
-            stringResource(if (loudness == Loudness.MUTED) R.string.watch_volume_muted else R.string.watch_volume_quiet),
+            stringResource(
+                when {
+                    stream == AudioManager.STREAM_ALARM && loudness == Loudness.MUTED -> R.string.watch_alarm_muted
+                    stream == AudioManager.STREAM_ALARM -> R.string.watch_alarm_quiet
+                    loudness == Loudness.MUTED -> R.string.watch_volume_muted
+                    else -> R.string.watch_volume_quiet
+                },
+            ),
             color = MaterialTheme.colorScheme.onErrorContainer,
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(horizontal = 8.dp),
@@ -80,8 +89,8 @@ fun VolumeWarning(loudness: Loudness, modifier: Modifier = Modifier) {
         TextButton(
             onClick = {
                 // One step up, with the system volume slider so the change is visible.
-                audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, 0)
-                audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI)
+                audio.adjustStreamVolume(stream, AudioManager.ADJUST_UNMUTE, 0)
+                audio.adjustStreamVolume(stream, AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI)
             },
         ) {
             Text(stringResource(R.string.watch_volume_louder))
