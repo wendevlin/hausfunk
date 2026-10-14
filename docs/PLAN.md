@@ -187,7 +187,7 @@ Every received message, on either side, is validated with kotlinx.serialization 
 
 ## UI
 
-Use only stock Jetpack Compose Material 3 components with dynamic color (Material You) and the Material icons shipped with Compose; no custom design system, no icon fonts.
+Use only stock Jetpack Compose Material 3 components with a fixed colour scheme from the brand palette (light and dark, see `docs/brand`; no dynamic color, so screenshots look the same on every phone) and the Material icons shipped with Compose; no custom components, no icon fonts.
 
 **Design principles**
 
@@ -394,7 +394,7 @@ v1 stays LAN-only and one-way, but nothing in it may block internet use or two-w
 - Maximum number of parent devices: soft limit of 4; confirm after the phase 6 heat test.
 - A parent may be paired with several baby devices and monitors one at a time (R18). Watching several at once is out of scope.
 - Night vision: out of scope for v1. No exposure boost; recommend a dim night light in the README.
-- App name: the visible name is a single string resource and can change at any time. The `applicationId` cannot; choose it before phase 1 (suggestion: a reverse-domain ID under a domain you control, independent of the final product name). Icon: a plain adaptive icon from a single colour and a Material icon until a real one exists.
+- App name: the visible name is a single string resource and can change at any time. The `applicationId` cannot; choose it before phase 1 (suggestion: a reverse-domain ID under a domain you control, independent of the final product name). Icon: the Hausfunk mark from `docs/brand` on navy, with a single-colour variant for themed icons.
 
 **Later, out of scope for v1**: remote access (signaling server + TURN), talk-back, recording, night vision.
 

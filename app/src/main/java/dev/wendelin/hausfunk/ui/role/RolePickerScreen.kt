@@ -40,6 +40,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.wendelin.hausfunk.R
 import dev.wendelin.hausfunk.data.Role
+import dev.wendelin.hausfunk.ui.theme.LogoMark
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,6 +60,9 @@ fun RolePickerScreen(
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.app_name)) },
+                navigationIcon = {
+                    LogoMark(Modifier.padding(start = 16.dp, end = 8.dp).size(width = 32.dp, height = 24.dp))
+                },
                 actions = {
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Outlined.Settings, contentDescription = stringResource(R.string.action_settings))
