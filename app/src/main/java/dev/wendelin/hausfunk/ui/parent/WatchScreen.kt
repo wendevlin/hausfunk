@@ -15,7 +15,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import android.content.pm.ApplicationInfo
 import android.content.res.Configuration
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.platform.LocalContext
 import android.graphics.Rect
 import androidx.activity.compose.LocalActivity
 import androidx.compose.runtime.Composable
@@ -62,6 +65,8 @@ fun WatchScreen(
     onVideoBounds: (Rect) -> Unit = {},
 ) {
     FullScreenInLandscape()
+    val context = LocalContext.current
+    val debugBuild = remember { (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0 }
     Box(
         Modifier
             .fillMaxSize()
@@ -88,6 +93,22 @@ fun WatchScreen(
                 onAspectRatio = onAspectRatio,
                 onBounds = onVideoBounds,
             )
+        }
+        if (debugBuild) {
+            val stats by session.videoStats.collectAsState()
+            stats?.let { s ->
+                // Debug builds only: what actually arrives, to judge quality on a real network.
+                Text(
+                    "${s.width}×${s.height} · ${"%.0f".format(s.fps)} fps · ${s.kbps} kbit/s · ${s.codec}",
+                    color = WatchColors.onBackground,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier
+                        .windowInsetsPadding(WindowInsets.safeDrawing)
+                        .align(Alignment.TopEnd)
+                        .background(Color.Black.copy(alpha = 0.5f))
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                )
+            }
         }
         IconButton(
             onClick = onClose,

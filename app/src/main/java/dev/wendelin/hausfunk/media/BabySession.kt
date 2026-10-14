@@ -383,6 +383,9 @@ class BabySession(
                         if (peer === p) {
                             p.ice.flush(pc)
                             limitVideo(p)
+                            // A home Wi-Fi can do far more than WebRTC's cautious default start;
+                            // its bandwidth estimate still lowers this when the link cannot.
+                            pc.setBitrate(MIN_BITRATE_BPS, START_BITRATE_BPS, MAX_BITRATE_BPS)
                         }
                     },
                     SessionDescription(SessionDescription.Type.ANSWER, message.sdp),
@@ -442,9 +445,9 @@ class BabySession(
             it.maxBitrateBps = MAX_BITRATE_BPS
             it.maxFramerate = FPS
         }
-        // When bandwidth or CPU runs short, drop frames rather than resolution: a sharp picture
-        // matters more than motion, and a changing size makes the parent's view jump.
-        parameters.degradationPreference = RtpParameters.DegradationPreference.MAINTAIN_RESOLUTION
+        // When bandwidth or CPU runs short, WebRTC lowers resolution and frame rate together; the
+        // parent's view ignores the small aspect changes that come with it.
+        parameters.degradationPreference = RtpParameters.DegradationPreference.BALANCED
         sender.parameters = parameters
     }
 
@@ -502,10 +505,14 @@ class BabySession(
     private companion object {
         const val TAG = "BabySession"
         const val STREAM_ID = "hausfunk"
-        const val WIDTH = 1280
-        const val HEIGHT = 720
+        // Captured at 1080p; sent at whatever the link and the encoder manage, scaled down
+        // automatically.
+        const val WIDTH = 1920
+        const val HEIGHT = 1080
         const val FPS = 15
-        const val MAX_BITRATE_BPS = 1_500_000
+        const val MIN_BITRATE_BPS = 300_000
+        const val START_BITRATE_BPS = 2_500_000
+        const val MAX_BITRATE_BPS = 4_000_000
         const val PAIRING_BLOCK_MS = 60_000L
         const val MAX_CONNECTIONS = 8
     }

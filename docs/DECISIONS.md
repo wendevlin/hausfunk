@@ -109,9 +109,14 @@ Deviations from, or clarifications of, the implementation plan. Newest first.
   once may come later as a special case.
 - **Back on the baby screen moves the app to the background** instead of stopping: only "Stop"
   (on screen or in the notification) ends monitoring, as the plan requires for swipe-away.
-- **Video keeps its resolution under load** (`MAINTAIN_RESOLUTION`) and the parent's view ignores
-  aspect changes below 2 %: in the phase 3 test the picture jumped briefly now and then, which
-  matches WebRTC scaling the frames down and up.
+- **Video: capture 1080p at 15 fps, up to 4 Mbit/s, start at 2.5 Mbit/s, `BALANCED` scaling**
+  (plan: 720p, 1.5 Mbit/s). The owner found the picture poor; on a home Wi-Fi WebRTC's cautious
+  default start and the low cap were the limit. WebRTC still scales resolution and frame rate
+  down by itself when the link or the encoder cannot keep up. The parent's view ignores aspect
+  changes below 2 %, so scaling no longer makes the picture jump (phase 3 test). More heat on the
+  baby phone; the thermal fallback stays in phase 7.
+- **Debug builds show the received resolution, frame rate, data rate and codec** on the watch
+  screen, to judge quality on real networks. Release builds do not.
 - **The same parent connecting again replaces its old connection** instead of getting `busy`
   (phase 3 test: tapping the baby again showed the old picture with "no connection").
 - **Parent restart refused in the background** posts a high-importance "Monitoring stopped"

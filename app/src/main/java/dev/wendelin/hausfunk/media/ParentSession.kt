@@ -30,11 +30,15 @@ import org.webrtc.IceCandidate
 import org.webrtc.MediaConstraints
 import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
+import org.webrtc.RTCStatsReport
 import org.webrtc.RtpTransceiver
 import org.webrtc.SessionDescription
 import org.webrtc.VideoSink
 import org.webrtc.VideoTrack
 import org.webrtc.audio.JavaAudioDeviceModule
+
+/** What actually arrives, for the debug overlay: resolution, frame rate, data rate, codec. */
+data class VideoStats(val width: Int, val height: Int, val fps: Double, val kbps: Int, val codec: String)
 
 sealed interface ParentState {
     /** The baby this state is about; null while idle. */
@@ -63,6 +67,12 @@ class ParentSession(context: Context, identity: Identity, trustedIds: () -> Set<
     private val executor = SerialExecutor("parent-session")
     private val _state = MutableStateFlow<ParentState>(ParentState.Idle)
     val state: StateFlow<ParentState> = _state.asStateFlow()
+    private val _videoStats = MutableStateFlow<VideoStats?>(null)
+
+    /** Measured every 2 s while connected; null otherwise. */
+    val videoStats: StateFlow<VideoStats?> = _videoStats.asStateFlow()
+    private var lastBytes = 0L
+    private var lastStatsUs = 0.0
 
     /** Shared with the renderers so they can draw frames decoded here. */
     val eglBase: EglBase = EglBase.create()
@@ -212,13 +222,45 @@ class ParentSession(context: Context, identity: Identity, trustedIds: () -> Set<
             when (state) {
                 PeerConnection.IceConnectionState.CONNECTED,
                 PeerConnection.IceConnectionState.COMPLETED,
-                -> _state.value = ParentState.Connected(l.baby)
+                -> {
+                    if (_state.value !is ParentState.Connected) pollStats(l)
+                    _state.value = ParentState.Connected(l.baby)
+                }
                 PeerConnection.IceConnectionState.FAILED,
                 PeerConnection.IceConnectionState.DISCONNECTED,
                 -> close(l, sendBye = true, lost = true)
                 else -> Unit
             }
         }
+    }
+
+    private fun pollStats(l: Link) {
+        val pc = l.pc ?: return
+        if (link !== l) return
+        pc.getStats { report -> executor.execute { if (link === l) onStats(report) } }
+        executor.schedule(STATS_INTERVAL_MS) { pollStats(l) }
+    }
+
+    private fun onStats(report: RTCStatsReport) {
+        val stats = report.statsMap.values
+        val inbound = stats.firstOrNull { it.type == "inbound-rtp" && it.members["kind"] == "video" } ?: return
+        val m = inbound.members
+        val bytes = (m["bytesReceived"] as? Number)?.toLong() ?: 0L
+        val kbps = if (lastStatsUs > 0 && inbound.timestampUs > lastStatsUs) {
+            ((bytes - lastBytes) * 8 * 1000 / (inbound.timestampUs - lastStatsUs)).toInt()
+        } else {
+            0
+        }
+        lastBytes = bytes
+        lastStatsUs = inbound.timestampUs
+        val codec = stats.firstOrNull { it.id == m["codecId"] }?.members?.get("mimeType") as? String
+        _videoStats.value = VideoStats(
+            width = (m["frameWidth"] as? Number)?.toInt() ?: 0,
+            height = (m["frameHeight"] as? Number)?.toInt() ?: 0,
+            fps = (m["framesPerSecond"] as? Number)?.toDouble() ?: 0.0,
+            kbps = kbps,
+            codec = codec?.substringAfter('/') ?: "?",
+        )
     }
 
     private fun send(l: Link, message: SignalingMessage) {
@@ -250,6 +292,9 @@ class ParentSession(context: Context, identity: Identity, trustedIds: () -> Set<
         l.videoTrack = null
         l.pc?.dispose()
         l.pc = null
+        _videoStats.value = null
+        lastBytes = 0L
+        lastStatsUs = 0.0
         audioManager.abandonAudioFocusRequest(focusRequest)
         _state.value = if (lost) ParentState.Lost(l.baby) else ParentState.Idle
     }
@@ -263,5 +308,6 @@ class ParentSession(context: Context, identity: Identity, trustedIds: () -> Set<
 
     private companion object {
         const val TAG = "ParentSession"
+        const val STATS_INTERVAL_MS = 2_000L
     }
 }
