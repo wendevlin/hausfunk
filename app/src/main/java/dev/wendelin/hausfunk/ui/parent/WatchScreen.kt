@@ -118,6 +118,14 @@ fun WatchScreen(
         ) {
             Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.watch_stop), tint = WatchColors.onBackground)
         }
+        val loudness = rememberLoudness()
+        VolumeWarning(
+            loudness,
+            Modifier
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .align(Alignment.BottomCenter)
+                .padding(16.dp),
+        )
         val message = when (state) {
             is ParentState.Connecting -> stringResource(R.string.watch_connecting, state.baby.name)
             is ParentState.Busy -> stringResource(R.string.watch_busy, state.baby.name)

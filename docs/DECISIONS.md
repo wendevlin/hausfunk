@@ -122,6 +122,10 @@ Deviations from, or clarifications of, the implementation plan. Newest first.
 - **Parent restart refused in the background** posts a high-importance "Monitoring stopped"
   notification and stops; it never crashes.
 
+- **Media-volume warning on the watch screen** (owner's request): "Sound is off" / "very quiet"
+  (below 25 %) with a "Louder" button. Monitoring sound plays as media, so that stream is checked;
+  the plan's alarm-volume warning (phase 5) is separate.
+
 ## Open points for later phases
 
 - **F-Droid and prebuilt libwebrtc.** F-Droid builds from source and is strict about prebuilt

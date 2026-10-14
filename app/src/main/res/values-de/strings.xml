@@ -94,4 +94,7 @@
     <string name="notification_stopped_title">Überwachung beendet</string>
     <string name="notification_stopped_body">Android hat die Überwachung im Hintergrund beendet. Tippe, um sie neu zu starten.</string>
     <string name="action_stop">Beenden</string>
+    <string name="watch_volume_muted">Ton ist aus</string>
+    <string name="watch_volume_quiet">Ton ist sehr leise</string>
+    <string name="watch_volume_louder">Lauter</string>
 </resources>

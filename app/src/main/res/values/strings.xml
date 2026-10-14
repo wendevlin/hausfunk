@@ -96,4 +96,7 @@
     <string name="notification_stopped_title">Monitoring stopped</string>
     <string name="notification_stopped_body">Android ended monitoring in the background. Tap to start it again.</string>
     <string name="action_stop">Stop</string>
+    <string name="watch_volume_muted">Sound is off</string>
+    <string name="watch_volume_quiet">Sound is very quiet</string>
+    <string name="watch_volume_louder">Louder</string>
 </resources>
