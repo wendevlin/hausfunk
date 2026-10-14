@@ -13,6 +13,9 @@ class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
+        // Otherwise the system draws a white or black scrim behind 3-button navigation. Every
+        // screen paints its own background down to the bottom edge, so none is needed.
+        window.isNavigationBarContrastEnforced = false
         super.onCreate(savedInstanceState)
         val app = application as HausfunkApplication
         setContent {
