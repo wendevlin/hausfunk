@@ -1,6 +1,5 @@
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
 }
@@ -11,13 +10,13 @@ val releaseKeystore: String? = System.getenv("HAUSFUNK_KEYSTORE_FILE")
 
 android {
     namespace = "dev.wendelin.hausfunk"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         // Permanent: changing it breaks updates of installed copies.
         applicationId = "dev.wendelin.hausfunk"
         minSdk = 31
-        targetSdk = 36
+        targetSdk = 37
         // Bump both for every release; CI checks that the tag equals "v$versionName".
         versionCode = 1
         versionName = "0.1.0"
@@ -61,6 +60,8 @@ android {
     lint {
         abortOnError = true
         checkReleaseBuilds = true
+        // Versions are pinned at least 14 days old on purpose, and lint must not need the network.
+        disable += setOf("NewerVersionAvailable", "GradleDependency", "AndroidGradlePluginVersion")
     }
 }
 
@@ -77,7 +78,7 @@ dependencies {
     implementation(libs.androidx.datastore)
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.material3)
-    implementation(libs.compose.material3.window.size.class)
+    implementation(libs.compose.material3.windowsize)
     implementation(libs.compose.material.icons.core)
     implementation(libs.compose.material.icons.extended)
     implementation(libs.compose.ui.tooling.preview)

@@ -19,6 +19,12 @@ Deviations from, or clarifications of, the implementation plan. Newest first.
 - **Version numbers are literals in `app/build.gradle.kts`.** CI checks that a `v*` tag equals
   `v$versionName`. Literal values are what F-Droid's update checker reads.
 - **`dependenciesInfo` disabled.** F-Droid rejects the encrypted dependency metadata block.
+- **compileSdk and targetSdk 37.** API 37 is the latest stable platform, and Navigation 2.10,
+  Compose 1.12 and core 1.19 refuse to build against 36.
+- **No `org.jetbrains.kotlin.android` plugin.** AGP 9 compiles Kotlin itself and fails the build
+  if the plugin is applied. The compose and serialization compiler plugins are still applied.
+- **Lint's newer-version checks disabled.** They contact Maven repositories on every run and
+  flag versions that are too new to pass the 14-day rule.
 
 ## Open points for later phases
 
