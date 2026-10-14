@@ -20,11 +20,20 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import android.os.SystemClock
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import dev.wendelin.hausfunk.pairing.PairingRunner
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
@@ -108,6 +117,8 @@ private fun Comparing(state: PairingState.Comparing) {
     Text(stringResource(R.string.pairing_compare_title), style = MaterialTheme.typography.headlineMedium)
     Spacer(Modifier.height(8.dp))
     Text(stringResource(R.string.pairing_compare_body, state.peerName), style = MaterialTheme.typography.bodyLarge)
+    Spacer(Modifier.height(16.dp))
+    Countdown(state.deadline)
     Spacer(Modifier.height(24.dp))
     FlowRow(
         Modifier.fillMaxWidth(),
@@ -125,6 +136,22 @@ private fun Comparing(state: PairingState.Comparing) {
         )
     }
 }
+
+/** A bar that runs empty until the pairing gives up, so the time limit is visible. */
+@Composable
+private fun Countdown(deadline: Long) {
+    fun remaining() = ((deadline - SystemClock.elapsedRealtime()).toFloat() / PairingRunner.TIMEOUT_MS).coerceIn(0f, 1f)
+    var fraction by remember(deadline) { mutableFloatStateOf(remaining()) }
+    LaunchedEffect(deadline) {
+        while (fraction > 0f) {
+            delay(COUNTDOWN_TICK_MS)
+            fraction = remaining()
+        }
+    }
+    LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
+}
+
+private const val COUNTDOWN_TICK_MS = 250L
 
 @Composable
 private fun EmojiCell(emoji: SasEmoji, german: Boolean) {

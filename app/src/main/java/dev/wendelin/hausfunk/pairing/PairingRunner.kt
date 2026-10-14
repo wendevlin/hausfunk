@@ -1,5 +1,6 @@
 package dev.wendelin.hausfunk.pairing
 
+import android.os.SystemClock
 import android.util.Log
 import dev.wendelin.hausfunk.SerialExecutor
 import dev.wendelin.hausfunk.signaling.SignalingConnection
@@ -16,8 +17,16 @@ import kotlinx.coroutines.flow.asStateFlow
 sealed interface PairingState {
     data object Connecting : PairingState
 
-    /** [confirmed]: this side tapped "They match" and waits for the other phone. */
-    data class Comparing(val emojis: List<SasEmoji>, val peerName: String, val confirmed: Boolean) : PairingState
+    /**
+     * [confirmed]: this side tapped "They match" and waits for the other phone. [deadline]:
+     * `SystemClock.elapsedRealtime()` at which the exchange gives up.
+     */
+    data class Comparing(
+        val emojis: List<SasEmoji>,
+        val peerName: String,
+        val confirmed: Boolean,
+        val deadline: Long,
+    ) : PairingState
 
     data class Paired(val peerName: String) : PairingState
 
@@ -54,10 +63,12 @@ class PairingRunner(
     private val _state = MutableStateFlow<PairingState>(PairingState.Connecting)
     val state: StateFlow<PairingState> = _state.asStateFlow()
     private var timeout: Future<*>? = null
+    private var deadline = 0L
     private var ended = false
 
     /** [firstMessage]: already read from the connection by someone else (a re-pair request). */
     fun start(firstMessage: SignalingMessage? = null) = executor.execute {
+        deadline = SystemClock.elapsedRealtime() + TIMEOUT_MS
         timeout = executor.schedule(TIMEOUT_MS) { apply(protocol.reject("timeout")) }
         apply(protocol.start())
         if (firstMessage != null) apply(protocol.onMessage(firstMessage))
@@ -98,7 +109,8 @@ class PairingRunner(
                 } catch (e: IOException) {
                     end(PairingState.Failed)
                 }
-                is PairingStep.Compare -> _state.value = PairingState.Comparing(step.emojis, step.peerName, confirmed = false)
+                is PairingStep.Compare ->
+                    _state.value = PairingState.Comparing(step.emojis, step.peerName, confirmed = false, deadline = deadline)
                 is PairingStep.Paired -> {
                     onPaired(PairedPeer(connection.peerDeviceId, step.peerName, connection.peerCertificate))
                     end(PairingState.Paired(step.peerName))
@@ -121,8 +133,9 @@ class PairingRunner(
         executor.shutdown()
     }
 
-    private companion object {
-        const val TAG = "Pairing"
+    companion object {
+        private const val TAG = "Pairing"
+        /** Also the length of the countdown bar on the pairing screen. */
         const val TIMEOUT_MS = 120_000L
     }
 }
