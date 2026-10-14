@@ -18,8 +18,8 @@ android {
         minSdk = 31
         targetSdk = 37
         // Bump both for every release; CI checks that the release tag equals versionName.
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1"
         // Phones only: x86 and x86_64 would add ~29 MB of libwebrtc for emulators and Chromebooks.
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
