@@ -43,3 +43,7 @@ Debug builds use the debug key and cannot update a release install (uninstall fi
 ## Known limitations
 
 Filled in as the phases land; see [docs/PLAN.md](docs/PLAN.md).
+
+## Licence
+
+[Apache License 2.0](LICENSE).
