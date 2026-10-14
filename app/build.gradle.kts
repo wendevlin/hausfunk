@@ -64,6 +64,8 @@ android {
         checkReleaseBuilds = true
         // Versions are pinned at least 14 days old on purpose, and lint must not need the network.
         disable += setOf("NewerVersionAvailable", "GradleDependency", "AndroidGradlePluginVersion")
+        // Phones only on purpose (see abiFilters); ChromeOS is not a target.
+        disable += "ChromeOsAbiSupport"
     }
 }
 
