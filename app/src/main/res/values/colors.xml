@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#2E5E7E</color>
+    <!-- Brand navy; the logo always sits on a dark background. -->
+    <color name="brand_navy">#203563</color>
+    <color name="ic_launcher_background">@color/brand_navy</color>
+    <!-- Same as the Compose surface colour, so there is no flash before the first frame. -->
+    <color name="window_background">#FFF9F2</color>
 </resources>

@@ -4,6 +4,13 @@ Deviations from, or clarifications of, the implementation plan. Newest first.
 
 ## Phase 1
 
+- **Fixed brand colours instead of dynamic color.** The owner wants the app, and its
+  screenshots, to look the same on every phone. `HausfunkTheme` uses a light and a dark Material 3
+  scheme built from the four brand colours in `docs/brand`; it still follows the system
+  light/dark setting. The watch screen stays black.
+- **Logo only in colour on dark backgrounds.** On light backgrounds the mark is drawn in a
+  single colour (`LogoMark` tints it with `onSurface`). The launcher icon is the mark on navy,
+  with a white monochrome layer for themed icons; the splash screen is navy in both themes.
 - **applicationId `dev.wendelin.hausfunk`.** Reverse-domain ID chosen by the owner, independent
   of the product name. Permanent once the first release is tagged.
 - **`dataExtractionRules` in addition to `allowBackup="false"`.** From Android 12,

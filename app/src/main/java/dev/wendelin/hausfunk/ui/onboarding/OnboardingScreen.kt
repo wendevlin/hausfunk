@@ -51,6 +51,7 @@ import dev.wendelin.hausfunk.R
 import dev.wendelin.hausfunk.compat.Permissions
 import dev.wendelin.hausfunk.compat.SystemDeviceName
 import dev.wendelin.hausfunk.data.DeviceName
+import dev.wendelin.hausfunk.ui.theme.LogoMark
 
 private enum class Step { NAME, CAMERA, MICROPHONE, NOTIFICATIONS, BATTERY }
 
@@ -168,6 +169,8 @@ private fun NameStep(stepLabel: String, initialName: String, onContinue: (String
         stepLabel = stepLabel,
         actions = { Button(onClick = submit, enabled = valid) { Text(stringResource(R.string.action_continue)) } },
     ) {
+        LogoMark(Modifier.size(width = 56.dp, height = 42.dp))
+        Spacer(Modifier.height(24.dp))
         Text(stringResource(R.string.onboarding_name_title), style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(12.dp))
         Text(
