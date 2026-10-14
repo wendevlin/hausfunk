@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds only: the navy background with a red ring, so the two apps cannot be confused. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M0,0 H108 V108 H0 Z"
+        android:fillColor="#D32F2F" />
+    <path
+        android:pathData="M26,54 A28,28 0,1 0,82 54 A28,28 0,1 0,26 54 Z"
+        android:fillColor="@color/brand_navy" />
+</vector>

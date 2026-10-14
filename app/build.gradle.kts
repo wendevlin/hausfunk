@@ -25,6 +25,14 @@ android {
     }
 
     signingConfigs {
+        // Shared, public debug key: every CI test build is signed alike, so one installs as an
+        // update over the previous one. It can only ever sign the ".debug" app, never a release.
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
         if (releaseKeystore != null) {
             create("release") {
                 storeFile = file(releaseKeystore)
@@ -36,6 +44,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Installs next to the release app, with its own data, name and red-ringed icon.
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
         release {
             isMinifyEnabled = false
             isDebuggable = false

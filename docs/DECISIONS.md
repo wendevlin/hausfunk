@@ -85,6 +85,12 @@ Deviations from, or clarifications of, the implementation plan. Newest first.
 - **Re-pairing needs removal on both phones.** A phone still in the other's trust store is
   classified as paired, not as a pairing peer.
 
+- **Debug builds are a separate app** (`applicationIdSuffix = ".debug"`, name "Hausfunk (Debug)",
+  red ring around the icon), signed with a debug keystore committed to the repository
+  (`app/debug.keystore`, standard debug passwords). Owner's request: test builds next to the
+  release app, and one test build updating the previous one. That key can only sign the debug
+  app ID, so it never touches releases.
+
 ## Open points for later phases
 
 - **F-Droid and prebuilt libwebrtc.** F-Droid builds from source and is strict about prebuilt

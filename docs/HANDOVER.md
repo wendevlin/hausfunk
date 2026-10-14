@@ -21,8 +21,9 @@ any reference to them in `README.md`) once the project is done, i.e. after phase
 
 ## Next steps (human): phase 3 gate
 
-Install the debug APK from the PR's CI run on both phones (uninstall the release build first:
-different signing key). Then:
+Install the debug APK from the PR's CI run on both phones. Debug builds are a separate app
+("Hausfunk (Debug)", red-ringed icon, ID `dev.wendelin.hausfunk.debug`) next to the release app,
+signed with a shared debug key, so later CI builds install as updates. Then:
 
 1. Baby phone: Baby → "Pair new parent". Parent phone: Parent → "Add baby device" → tap the baby.
 2. Both phones show 7 emojis with names; they must be identical. Tap "They match" on both.
