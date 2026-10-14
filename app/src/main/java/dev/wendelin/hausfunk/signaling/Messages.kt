@@ -41,6 +41,22 @@ data object Busy : SignalingMessage
 @SerialName("bye")
 data object Bye : SignalingMessage
 
+@Serializable
+@SerialName("pair_commit")
+data class PairCommit(val commitment: String) : SignalingMessage
+
+@Serializable
+@SerialName("pair_reveal")
+data class PairReveal(val nonce: String, val deviceId: String, val name: String) : SignalingMessage
+
+@Serializable
+@SerialName("pair_confirm")
+data object PairConfirm : SignalingMessage
+
+@Serializable
+@SerialName("pair_abort")
+data object PairAbort : SignalingMessage
+
 /** Messages on the WebRTC data channel `control`. */
 @Serializable
 sealed interface ControlMessage

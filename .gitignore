@@ -7,4 +7,6 @@ local.properties
 .kotlin/
 *.jks
 *.keystore
+# Shared debug key so CI test builds update each other; never used for releases.
+!app/debug.keystore
 captures/

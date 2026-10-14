@@ -6,7 +6,7 @@ import java.security.MessageDigest
 object Fingerprint {
     fun sha256(der: ByteArray): ByteArray = MessageDigest.getInstance("SHA-256").digest(der)
 
-    fun deviceId(der: ByteArray): String = sha256(der).toHex()
+    fun deviceId(der: ByteArray): String = toHex(sha256(der))
 
-    private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it.toInt() and 0xff) }
+    fun toHex(bytes: ByteArray): String = bytes.joinToString("") { "%02x".format(it.toInt() and 0xff) }
 }

@@ -1,29 +1,36 @@
 package dev.wendelin.hausfunk.signaling
 
+import dev.wendelin.hausfunk.identity.PeerClass
 import java.io.Closeable
 import java.io.IOException
-import java.net.InetAddress
-
-/**
- * How signaling connections are made. Phase 2 uses [PlainTcpTransport]; phase 3 replaces it with
- * mutual TLS and deletes the plain one. Callers never know which one they have.
- */
-interface SignalingTransport {
-    /** Baby side: opens a listening socket on a free port. */
-    fun listen(): SignalingServer
-
-    /** Parent side: connects to a baby. Blocking. */
-    fun connect(address: InetAddress, port: Int): SignalingConnection
-}
 
 interface SignalingServer : Closeable {
     val port: Int
 
-    /** Blocks until a parent connects. Throws [IOException] once closed. */
-    fun accept(): SignalingConnection
+    /** Blocks until a TCP connection arrives; the TLS handshake happens in [Pending.handshake]. */
+    fun accept(): Pending
+
+    /** An accepted socket before its handshake, so a slow peer never blocks [accept]. */
+    interface Pending : Closeable {
+        /** Runs the TLS handshake (10 s limit) and classifies the peer. Throws [IOException] if rejected. */
+        fun handshake(): SignalingConnection
+    }
 }
 
+/** One authenticated signaling connection: the peer is whoever holds the certificate it presented. */
 interface SignalingConnection : Closeable {
+    /** Device ID (certificate fingerprint, hex) of the peer, from the TLS session. */
+    val peerDeviceId: String
+
+    /** SHA-256 of the peer certificate, from the TLS session. */
+    val peerFingerprint: ByteArray
+
+    /** DER of the peer certificate, for the trust store. */
+    val peerCertificate: ByteArray
+
+    /** TRUSTED for paired peers; PAIRING only for a pairing connection. */
+    val peerClass: PeerClass
+
     /**
      * Blocks for the next known message; unknown types are skipped. Returns null when the peer
      * closed the connection cleanly. Throws [IOException] on a malformed or oversize frame, a

@@ -10,7 +10,6 @@
     <string name="action_rename">Umbenennen</string>
     <string name="action_remove">Entfernen</string>
     <string name="action_settings">Einstellungen</string>
-    <string name="action_more">Weitere Optionen</string>
 
     <string name="onboarding_step">Schritt %1$d von %2$d</string>
     <string name="onboarding_name_title">Gerät benennen</string>
@@ -39,13 +38,11 @@
 
     <string name="baby_waiting">Warte auf Eltern</string>
     <string name="baby_no_parents">Kein Elterngerät verbunden.</string>
-    <string name="baby_pair">Neues Elterngerät koppeln</string>
     <string name="baby_stop">Beenden</string>
     <string name="baby_switch_camera">Kamera wechseln</string>
 
     <string name="parent_title">Babygeräte</string>
-    <string name="parent_empty">Noch kein Babygerät gekoppelt. Wähle auf dem anderen Handy „Baby“ und tippe dort auf „Neues Elterngerät koppeln“.</string>
-    <string name="parent_add">Babygerät hinzufügen</string>
+    <string name="parent_empty">Noch kein Babygerät. Wähle auf dem anderen Handy „Baby“, dann erscheint es hier.</string>
     <string name="parent_offline">Offline</string>
     <string name="parent_select_hint">Wähle ein Babygerät, um die Überwachung zu starten.</string>
 
@@ -69,13 +66,27 @@
     <string name="baby_connected_to">Verbunden mit %1$s.</string>
     <string name="baby_failed">Überwachung konnte nicht starten. Geh zurück und versuche es erneut.</string>
     <string name="baby_no_camera">Keine Kamera verfügbar, es wird nur Ton gesendet.</string>
-    <string name="test_build_warning">Testversion: Die Verbindung ist noch nicht geschützt. Alle in diesem WLAN können zusehen und zuhören. Nicht außerhalb deines Zuhauses verwenden.</string>
-    <string name="parent_nearby">In der Nähe (Testversion, nicht gekoppelt)</string>
-    <string name="parent_searching">Suche Babygeräte in diesem WLAN …</string>
     <string name="parent_online">Online · zum Zusehen tippen</string>
     <string name="parent_watching">Wird angesehen</string>
     <string name="watch_stop">Zusehen beenden</string>
     <string name="watch_connecting">Verbinde mit %1$s …</string>
     <string name="watch_busy">%1$s überträgt schon an ein anderes Elterngerät.</string>
     <string name="watch_lost">Verbindung zu %1$s verloren.</string>
+    <string name="pairing_compare_title">Emojis vergleichen</string>
+    <string name="pairing_compare_body">Zeigt %1$s dieselben Emojis in derselben Reihenfolge? Tippe auf beiden Geräten auf „Passt“.</string>
+    <string name="pairing_match">Passt</string>
+    <string name="pairing_no_match">Passt nicht</string>
+    <string name="pairing_waiting_for_peer">Warte auf die Bestätigung von %1$s …</string>
+    <string name="pairing_done_title">Gekoppelt</string>
+    <string name="pairing_done_body">%1$s ist jetzt gekoppelt. Ab jetzt verbinden sich die beiden Handys von selbst.</string>
+    <string name="pairing_failed_title">Nicht gekoppelt</string>
+    <string name="pairing_failed_body">Das Koppeln wurde nicht abgeschlossen, es wurde nichts gespeichert. Versuche es auf beiden Handys noch einmal.</string>
+    <string name="parent_tap_to_pair">Neu · zum Koppeln tippen</string>
+    <string name="parent_paired_section">Gekoppelt</string>
+    <string name="parent_new_section">Neu in diesem WLAN</string>
+    <string name="watch_no_picture">Noch kein Bild vom Babygerät.</string>
+    <string name="baby_camera_error">Die Kamera funktioniert nicht. Vielleicht verwendet eine andere App sie.</string>
+    <string name="baby_screen_off">Bild aus</string>
+    <string name="baby_screen_off_hint">Die Überwachung läuft weiter. Tippen zeigt den Bildschirm wieder.</string>
+    <string name="pairing_connecting">Verbinde …</string>
 </resources>

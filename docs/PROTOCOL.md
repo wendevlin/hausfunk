@@ -1,15 +1,14 @@
 # Hausfunk wire protocol (version 1)
 
-Kept in sync with the code. Phase 2 implements discovery, framing and signaling over a
-**temporary plain TCP** connection (no TLS, no pairing); phase 3 replaces the transport with
-mutual TLS and adds pairing. The data channel exists but carries no messages yet.
+Kept in sync with the code. Implemented: discovery, mutual TLS, pairing and signaling (phase 3).
+The data channel exists but carries no messages yet (phase 5).
 
 ## Discovery
 
 - mDNS via `NsdManager`, service type `_babyphone._tcp`.
 - Service name: the baby's device name (NSD may append " (2)" on a clash); shown to parents.
 - Port: the baby's signaling port, chosen by the system.
-- TXT attributes: `id=<device ID>`, `v=1`, and `pair=1` while the baby's pairing window is open.
+- TXT attributes: `id=<device ID>`, `v=1`.
 - TXT attributes are read only after a resolve, so every `_babyphone._tcp` service found is
   resolved and matched on `id`.
 
@@ -21,10 +20,18 @@ mutual TLS and adds pairing. The data channel exists but carries no messages yet
 
 ## Transport
 
+Implemented in `signaling/TlsTransport.kt`; trust decisions in `identity/TlsKeys.kt`.
+
 - The baby is always the TLS server and WebRTC offerer; the parent is the TLS client and answerer.
 - TLS 1.3 only, mutual authentication (`needClientAuth = true`).
 - Trust: a certificate is accepted if and only if its SHA-256 fingerprint is in the trust store.
-  Validity dates, chains and hostnames are ignored.
+  Validity dates, chains and hostnames are ignored. The parent additionally requires the
+  fingerprint to equal the device ID of the baby it meant to connect to.
+- The baby classifies each client after the handshake: `TRUSTED` if pinned, else `PAIRING`.
+  A `PAIRING` connection only ever reaches the pairing exchange, never signaling. One at a time;
+  a device whose attempt failed is refused for 60 s.
+- The identity key signs TLS handshakes inside the Keystore (purposes SIGN/VERIFY, digests
+  SHA-256 and NONE; the platform hands TLS signatures to the Keystore as raw digests).
 - Limits: connect/handshake timeout 10 s, at most 8 concurrent connections on the baby, at most 1
   `PAIRING` connection.
 - Read timeout 30 s while the session is set up (until the baby has the `answer`, the parent
@@ -32,12 +39,17 @@ mutual TLS and adds pairing. The data channel exists but carries no messages yet
   `ping`/`pong` (phase 5) and the ICE state.
 - Framing: 4-byte big-endian length prefix, then UTF-8 JSON, maximum 64 KiB per frame.
   Unknown message types are ignored; malformed or oversize frames close the connection.
-- Every message is `{ "type": ..., ... }`. The sender's device ID travels in `hello`; after that
-  the connection itself identifies the peer.
+- Every message is `{ "type": ..., ... }`. The sender's device ID travels in `hello` and must equal
+  the fingerprint of the certificate the peer presented, otherwise the connection is closed.
 
 ## Pairing (commit-reveal SAS inside TLS)
 
-1. Baby opens a 120 s pairing window and advertises `pair=1`. While open, its server trust
+Messages: `pair_commit { commitment }`, `pair_reveal { nonce, deviceId, name }`, `pair_confirm`,
+`pair_abort`; commitment and nonce are base64. Implemented in `pairing/` (pure logic in
+`PairingProtocol.kt`, emoji table in `SasEmoji.kt` from `@matrix-org/spec` 1.16.0).
+
+1. The parent lists every `_babyphone._tcp` service; the user taps one that is not paired.
+   (Changed from the plan's 120 s pairing window, see DECISIONS.) While open, its server trust
    manager accepts one unknown client certificate; the connection is classified `PAIRING` and
    handled only by the pairing handler.
 2. Parent picks the advertised baby and connects with a one-connection trust manager that accepts
@@ -53,6 +65,13 @@ mutual TLS and adds pairing. The data channel exists but carries no messages yet
 9. Both users compare the emojis. "They match" → `pair_confirm`; "Don't match", back or 120 s
    timeout → `pair_abort` and close.
 10. A side stores the peer only after its own "They match" **and** the peer's `pair_confirm`.
+    Any message out of order, a second commitment or reveal, a timeout (120 s) or a dropped
+    connection aborts and stores nothing.
+11. The parent refuses a baby whose certificate does not match the `id` it announced, or that is
+    already in its trust store.
+12. Re-pairing after the parent removed the baby: the baby still trusts the parent, so the
+    connection is `TRUSTED`; a `pair_commit` as its first message hands it to the pairing exchange.
+13. Pairing is mutual and independent of roles: once paired, either device may be baby or parent.
 
 ## Signaling
 
@@ -62,7 +81,7 @@ mutual TLS and adds pairing. The data channel exists but carries no messages yet
 | `offer` | baby → parent | `sdp` |
 | `answer` | parent → baby | `sdp` |
 | `ice` | both | `candidate`, `sdpMid`, `sdpMLineIndex` |
-| `busy` | baby → parent | parent limit reached (1 in phase 2, 4 from phase 6) |
+| `busy` | baby → parent | parent limit reached (1 until phase 6, then 4) |
 | `bye` | both | orderly close |
 
 - Sequence: parent connects and sends `hello`; baby answers `hello`, then `offer`; parent sends

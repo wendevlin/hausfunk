@@ -17,7 +17,12 @@ const val SERVICE_TYPE = "_babyphone._tcp"
 private const val TAG = "Discovery"
 
 /** A baby device seen on the LAN and resolved to an address. */
-data class FoundBaby(val deviceId: String, val name: String, val address: InetAddress, val port: Int)
+data class FoundBaby(
+    val deviceId: String,
+    val name: String,
+    val address: InetAddress,
+    val port: Int,
+)
 
 /** Baby side: advertises the signaling port with `id` and `v` in the TXT record. */
 class BabyAdvertiser(context: Context) {
@@ -122,7 +127,9 @@ class BabyFinder(context: Context) {
     }
 
     private fun publish() {
-        _babies.value = byService.values.distinctBy { it.deviceId }.sortedBy { it.name.lowercase() }
+        _babies.value = byService.values
+            .distinctBy { it.deviceId }
+            .sortedBy { it.name.lowercase() }
     }
 
     private fun isDeviceId(id: String) = id.length == 64 && id.all { it in '0'..'9' || it in 'a'..'f' }
