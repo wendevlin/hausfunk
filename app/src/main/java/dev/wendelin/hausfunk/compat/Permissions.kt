@@ -17,6 +17,8 @@ object Permissions {
     val notificationPermissionNeeded: Boolean
         get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
 
+    // Only requested when notificationPermissionNeeded is true.
+    @SuppressLint("InlinedApi")
     const val NOTIFICATIONS = Manifest.permission.POST_NOTIFICATIONS
 
     fun isGranted(context: Context, permission: String): Boolean =

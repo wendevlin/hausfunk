@@ -1,12 +1,12 @@
 # Every version is pinned exactly and was released at least 14 days before it was added.
 [versions]
-agp = "8.13.0"
+agp = "9.4.1"
 kotlin = "2.4.20"
-composeBom = "2025.09.01"
-activityCompose = "1.11.0"
-navigationCompose = "2.9.5"
-datastore = "1.1.7"
-coreKtx = "1.17.0"
+composeBom = "2026.09.00"
+activityCompose = "1.13.0"
+navigationCompose = "2.10.2"
+datastore = "1.2.1"
+coreKtx = "1.19.1"
 kotlinxSerialization = "1.11.0"
 kotlinxCoroutines = "1.11.0"
 junit = "4.13.2"
@@ -18,7 +18,7 @@ androidx-navigation-compose = { module = "androidx.navigation:navigation-compose
 androidx-datastore = { module = "androidx.datastore:datastore", version.ref = "datastore" }
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
 compose-material3 = { module = "androidx.compose.material3:material3" }
-compose-material3-window-size-class = { module = "androidx.compose.material3:material3-window-size-class" }
+compose-material3-windowsize = { module = "androidx.compose.material3:material3-window-size-class" }
 compose-material-icons-core = { module = "androidx.compose.material:material-icons-core" }
 compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
 compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
@@ -31,6 +31,5 @@ kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref =
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
