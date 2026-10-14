@@ -1,11 +1,14 @@
 # Hausfunk wire protocol (version 1)
 
-Kept in sync with the code. Phase 1 implements none of this on the wire yet; it is the
-contract the later phases build to.
+Kept in sync with the code. Phase 2 implements discovery, framing and signaling over a
+**temporary plain TCP** connection (no TLS, no pairing); phase 3 replaces the transport with
+mutual TLS and adds pairing. The data channel exists but carries no messages yet.
 
 ## Discovery
 
 - mDNS via `NsdManager`, service type `_babyphone._tcp`.
+- Service name: the baby's device name (NSD may append " (2)" on a clash); shown to parents.
+- Port: the baby's signaling port, chosen by the system.
 - TXT attributes: `id=<device ID>`, `v=1`, and `pair=1` while the baby's pairing window is open.
 - TXT attributes are read only after a resolve, so every `_babyphone._tcp` service found is
   resolved and matched on `id`.
@@ -22,11 +25,15 @@ contract the later phases build to.
 - TLS 1.3 only, mutual authentication (`needClientAuth = true`).
 - Trust: a certificate is accepted if and only if its SHA-256 fingerprint is in the trust store.
   Validity dates, chains and hostnames are ignored.
-- Limits: handshake timeout 10 s, read timeout 30 s, at most 8 concurrent connections on the baby,
-  at most 1 `PAIRING` connection.
+- Limits: connect/handshake timeout 10 s, at most 8 concurrent connections on the baby, at most 1
+  `PAIRING` connection.
+- Read timeout 30 s while the session is set up (until the baby has the `answer`, the parent
+  the `offer`). After that the socket may stay idle; liveness comes from the data channel
+  `ping`/`pong` (phase 5) and the ICE state.
 - Framing: 4-byte big-endian length prefix, then UTF-8 JSON, maximum 64 KiB per frame.
   Unknown message types are ignored; malformed or oversize frames close the connection.
-- Every message is `{ "type": ..., ... }` and carries the sender's device ID.
+- Every message is `{ "type": ..., ... }`. The sender's device ID travels in `hello`; after that
+  the connection itself identifies the peer.
 
 ## Pairing (commit-reveal SAS inside TLS)
 
@@ -51,13 +58,18 @@ contract the later phases build to.
 
 | Message | Direction | Content |
 | --- | --- | --- |
-| `hello` | both, parent first | protocol version (1), device ID, name, app version; parent adds `watching` |
-| `offer` | baby → parent | SDP |
-| `answer` | parent → baby | SDP |
-| `ice` | both | candidate, sdpMid, sdpMLineIndex |
-| `busy` | baby → parent | parent limit (4) reached |
+| `hello` | both, parent first | `version` (1), `deviceId`, `name`, `appVersion`; parent adds `watching` |
+| `offer` | baby → parent | `sdp` |
+| `answer` | parent → baby | `sdp` |
+| `ice` | both | `candidate`, `sdpMid`, `sdpMLineIndex` |
+| `busy` | baby → parent | parent limit reached (1 in phase 2, 4 from phase 6) |
 | `bye` | both | orderly close |
 
+- Sequence: parent connects and sends `hello`; baby answers `hello`, then `offer`; parent sends
+  `answer`; both send `ice` as candidates appear. Candidates that arrive before the remote
+  description is set are held until it is.
+- A `hello` with another protocol version, or (on the parent) a device ID other than the one
+  discovered, closes the connection.
 - `iceServers = []`: host candidates only.
 - The signaling socket lives as long as the peer connection; its close counts as connection loss.
 - Reconnect is always a full teardown and a fresh TLS connection and `PeerConnection`.
@@ -67,6 +79,6 @@ contract the later phases build to.
 | Message | Direction | Content |
 | --- | --- | --- |
 | `watching` | parent → baby | boolean |
-| `status` | baby → parent | battery %, charging, connected parent count, thermal reduced flag; every 30 s and on change |
-| `level` | baby → parent | audio level in dBFS, 5 times per second |
+| `status` | baby → parent | `battery` (%), `charging`, `parents` (count), `thermalReduced`; every 30 s and on change |
+| `level` | baby → parent | `dbfs`, 5 times per second |
 | `ping` / `pong` | parent → baby / baby → parent | every 2 s; 6 s without one means the link is lost |

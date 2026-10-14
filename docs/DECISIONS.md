@@ -33,6 +33,32 @@ Deviations from, or clarifications of, the implementation plan. Newest first.
 - **Lint's newer-version checks disabled.** They contact Maven repositories on every run and
   flag versions that are too new to pass the 14-day rule.
 
+## Phase 2
+
+- **`ACCESS_LOCAL_NETWORK` added to the permission list.** Targeting API 37 makes local network
+  access a runtime permission; without it `NsdManager` finds nothing. Approved by the owner on
+  2026-10-14. Requested in onboarding on Android 17+ only; older versions need nothing.
+- **App size goes into the plan (phase 7).** Requested by the owner after installing the first
+  debug APK.
+
+- **libwebrtc `io.github.webrtc-sdk:android:144.7559.15`.** Latest patch (2026-09-05) of the
+  mature 144 line; 150.7871.01 was the first release of a new line.
+- **Only `arm64-v8a` and `armeabi-v7a` are packaged.** The x86 builds of libwebrtc (~29 MB) only
+  serve emulators and Chromebooks. Debug APK went from 107 MB to 80 MB; the rest is phase 7.
+- **mDNS service name = device name.** Parents need a name before pairing (the pairing list in
+  phase 3 shows advertising babies by name). It is a label only, capped like every name.
+- **Read timeout only during setup.** A 30 s read timeout for the whole connection would cut an
+  idle, healthy session. Liveness comes from ICE state now and data-channel pings in phase 5.
+- **Device ID only in `hello`.** PROTOCOL.md said every message carries it; over one connection
+  that adds nothing, and from phase 3 TLS identifies the peer anyway.
+- **One parent at a time in phase 2.** A second parent gets `busy`. Phase 6 raises the limit to 4.
+- **Parent home and watch are one navigation route.** The session must survive switching between
+  list and video (compact) and drive both panes (wide). Phase 4 moves it into the service.
+- **Baby screen stays on while streaming (temporary).** In phase 2 the session lives in the
+  activity, so a screen timeout would stop it. Removed in phase 4 with the foreground service.
+- **`SerialExecutor` drops tasks after shutdown.** Socket readers and NSD callbacks can deliver
+  events after a session ended; throwing on their threads would crash the app.
+
 ## Open points for later phases
 
 - **F-Droid and prebuilt libwebrtc.** F-Droid builds from source and is strict about prebuilt

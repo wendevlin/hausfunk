@@ -10,6 +10,7 @@ coreKtx = "1.19.1"
 kotlinxSerialization = "1.11.0"
 kotlinxCoroutines = "1.11.0"
 junit = "4.13.2"
+webrtc = "144.7559.15"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -26,6 +27,7 @@ compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "kotlinxCoroutines" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinxCoroutines" }
+webrtc = { module = "io.github.webrtc-sdk:android", version.ref = "webrtc" }
 junit = { module = "junit:junit", version.ref = "junit" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
 

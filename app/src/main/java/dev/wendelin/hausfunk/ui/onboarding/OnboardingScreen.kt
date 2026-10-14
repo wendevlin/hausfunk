@@ -25,6 +25,7 @@ import androidx.compose.material.icons.outlined.BatteryChargingFull
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Videocam
+import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -53,7 +54,7 @@ import dev.wendelin.hausfunk.compat.SystemDeviceName
 import dev.wendelin.hausfunk.data.DeviceName
 import dev.wendelin.hausfunk.ui.theme.LogoMark
 
-private enum class Step { NAME, CAMERA, MICROPHONE, NOTIFICATIONS, BATTERY }
+private enum class Step { NAME, CAMERA, MICROPHONE, LOCAL_NETWORK, NOTIFICATIONS, BATTERY }
 
 @Composable
 fun OnboardingScreen(
@@ -68,6 +69,9 @@ fun OnboardingScreen(
             add(Step.NAME)
             if (!Permissions.isGranted(context, Manifest.permission.CAMERA)) add(Step.CAMERA)
             if (!Permissions.isGranted(context, Manifest.permission.RECORD_AUDIO)) add(Step.MICROPHONE)
+            if (Permissions.localNetworkPermissionNeeded && !Permissions.isGranted(context, Permissions.LOCAL_NETWORK)) {
+                add(Step.LOCAL_NETWORK)
+            }
             if (Permissions.notificationPermissionNeeded && !Permissions.isGranted(context, Permissions.NOTIFICATIONS)) {
                 add(Step.NOTIFICATIONS)
             }
@@ -105,6 +109,11 @@ fun OnboardingScreen(
         Step.MICROPHONE -> PermissionStep(
             stepLabel, Icons.Outlined.Mic, R.string.onboarding_microphone_title, R.string.onboarding_microphone_body,
             onAllow = { permissionLauncher.launch(Manifest.permission.RECORD_AUDIO) }, onSkip = next,
+        )
+        Step.LOCAL_NETWORK -> PermissionStep(
+            stepLabel, Icons.Outlined.Wifi, R.string.onboarding_local_network_title,
+            R.string.onboarding_local_network_body,
+            onAllow = { permissionLauncher.launch(Permissions.LOCAL_NETWORK) }, onSkip = next,
         )
         Step.NOTIFICATIONS -> PermissionStep(
             stepLabel, Icons.Outlined.Notifications, R.string.onboarding_notifications_title,

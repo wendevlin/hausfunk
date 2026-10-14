@@ -8,25 +8,42 @@ any reference to them in `README.md`) once the project is done, i.e. after phase
 
 ## Where we are
 
-- **Phase 1 builds.** `./gradlew assembleDebug testDebugUnitTest lint` passes locally and in
-  GitHub Actions (branch `claude/peaceful-johnson-yioskf`, not yet merged into `main`; `main`
-  is still red from the never-compiled skeleton).
-- Versions are pinned to real releases at least 14 days old: Gradle 9.8.0 (with checksum),
-  AGP 9.4.1, Kotlin 2.4.20, Compose BOM 2026.09.00. Compile and target SDK 37.
-- A signed `assembleRelease` was verified locally with a throwaway keystore.
-- Screenshots of every screen (phone, phone landscape, tablet, dark German) were rendered with
-  Paparazzi in a scratch copy outside the repository and sent to the human. Layoutlib cannot
-  render `OnboardingScreen` itself (no `PowerManager`), so the name step was rendered directly.
-- Phase 2 must not start until the human has run the phase 1 gate on real phones (see `PLAN.md`).
+- **Phase 1 is merged** (`main`): skeleton, onboarding, role picker, settings, identity, CI, logo.
+  The owner checked it on two phones. The signed-release test (`v0.1.0` → `v0.1.1`) was
+  deferred by the owner to the end of phase 2.
+- **Phase 2 is written and builds, but has not run on a phone yet.** Nothing could be tested
+  on a device here (no emulator). `assembleDebug testDebugUnitTest lint` passes; 21 unit tests
+  cover framing, message codec, the plain TCP transport (loopback) and `SerialExecutor`.
+  - Discovery: `discovery/` (NsdManager), Android 12–13 resolve queue in `compat/NsdCompat.kt`.
+  - Signaling: `signaling/` messages, codec, framing, `SignalingTransport`, and the temporary
+    `PlainTcpTransport` (unauthenticated, phase 2 only; delete in phase 3).
+  - Media: `media/BabySession.kt` (camera + mic, one parent), `media/ParentSession.kt`
+    (receive, render, play as media). Both live in the activity until phase 4.
+  - UI: baby screen shows waiting/streaming and a test-build warning; parent home lists
+    unpaired "nearby" babies (temporary) and opens the watch screen/pane.
+  - New onboarding step for `ACCESS_LOCAL_NETWORK` on Android 17+ (approved, see DECISIONS).
+- Plan updated: local network permission, and app size work in phase 7.
 
-## Next steps (human)
+## Next steps (human): phase 2 gate
 
-1. Merge the branch into `main`.
-2. Install the debug APK from the CI run's `hausfunk-debug` artifact on a phone and check the
-   screens.
-3. Add the four `HAUSFUNK_*` signing secrets (see `README.md`), tag `v0.1.0`, install the
-   release APK; then bump `versionCode`/`versionName`, tag `v0.1.1` and check it installs as an
-   update. Report the gate result.
+Install the debug APK from the CI run of this branch on both phones (same Wi-Fi).
+
+1. Phone A: role Baby. It should say "Waiting for parents" and show the red test-build warning.
+2. Phone B: role Parent. Under "Nearby" phone A's name should appear within a few seconds.
+3. Tap it: within a few seconds phone B shows phone A's camera with sound. Check volume keys,
+   rotating either phone, and that the picture is upright.
+4. Tap the X on phone B: phone A goes back to "Waiting for parents".
+5. Report: Android versions of both phones, and anything that did not work.
+
+Uncertain, please check explicitly:
+- On Android 17 phones: does discovery work after allowing "local network" in onboarding?
+- Rotating the baby phone during streaming (the activity is not recreated, but the camera
+  orientation handling is untested).
+- Sound quality: echo cancellation and noise suppression are off on purpose (quiet sounds).
+- The baby phone keeps its screen on while streaming (temporary until phase 4).
+
+After the gate: tag `v0.1.0`/`v0.1.1` for the deferred release test (signing secrets first), then
+phase 3.
 
 ## Notes for the next agent session
 

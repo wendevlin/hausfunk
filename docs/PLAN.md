@@ -272,7 +272,7 @@ Silence must never be ambiguous: either a parent hears the baby, or the parent's
 Apply from phase 1 and keep through every phase.
 
 - Manifest: `android:allowBackup="false"`, `android:exported="false"` on both services, only the launcher activity exported, `usesCleartextTraffic="false"`. Release builds have `debuggable=false`.
-- Release build: `isMinifyEnabled = false` for v1 (no ProGuard rules to maintain for libwebrtc; APK size is irrelevant for sideloading).
+- Release build: `isMinifyEnabled = false` until the app-size work in phase 7, which turns on R8 with keep rules for libwebrtc (see "App size").
 - Network: TLS 1.3 only, mutual authentication, fingerprint pinning, no trust-all code path outside the pairing handler, handshake and read timeouts, connection and frame size limits as specified above.
 - Pairing: nonces from `SecureRandom`, reveal only after the peer's commitment, commitment verified before deriving the SAS, store only after both confirmations.
 - Input: every network message is parsed into a typed class; names capped at 32 characters and treated as plain text; unknown types ignored.
@@ -307,7 +307,16 @@ Pin every dependency to an exact version that has been released for at least 14 
 - Check full-screen intents via `NotificationManagerCompat.canUseFullScreenIntent()`; it returns true on 12–13 and for sideloaded apps on 14+.
 - Keep these differences behind small helpers in one `compat` package, never scattered `SDK_INT` checks.
 
-**Permissions**: `CAMERA`, `RECORD_AUDIO`, `INTERNET`, `ACCESS_NETWORK_STATE`, `WAKE_LOCK`, `POST_NOTIFICATIONS`, `VIBRATE`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_CAMERA`, `FOREGROUND_SERVICE_MICROPHONE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`, `USE_FULL_SCREEN_INTENT`, `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`. Nothing else; in particular no Wi-Fi state or multicast permissions.
+**Permissions**: `CAMERA`, `RECORD_AUDIO`, `INTERNET`, `ACCESS_NETWORK_STATE`, `WAKE_LOCK`, `POST_NOTIFICATIONS`, `VIBRATE`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_CAMERA`, `FOREGROUND_SERVICE_MICROPHONE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`, `USE_FULL_SCREEN_INTENT`, `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`, `ACCESS_LOCAL_NETWORK`. Nothing else; in particular no Wi-Fi state or multicast permissions.
+
+**Local network permission**: apps targeting Android 17 (API 37) need the runtime permission `ACCESS_LOCAL_NETWORK` (Nearby devices group) for `NsdManager` discovery and for connections to LAN addresses; without it discovery silently finds nothing. Both roles ask for it during onboarding on Android 17+, with an explanation step like the other permissions, and the baby and parent screens show a clear hint when it is denied. The system device picker (`NsdManager` with `FLAG_SHOW_PICKER`) is not used: it shows one device per request and cannot support automatic reconnection.
+
+**App size**: the first debug APK was 64 MB and the unminified release APK 47 MB before libwebrtc was added. Reduce it in phase 7, measured on the release APK and recorded in `DECISIONS.md`:
+
+- Replace `material-icons-extended` with the handful of icons actually used, copied as vector drawables (Apache 2.0).
+- Turn on R8 (`isMinifyEnabled`, `isShrinkResources`) with keep rules for `org.webrtc` (JNI calls into Java by name) and kotlinx.serialization; run the full manual checklist on the minified build.
+- Ship only the ABIs real phones need: `arm64-v8a`, plus `armeabi-v7a` only if a household device needs it; build one APK per ABI if both are kept.
+- Target: a release APK well under 20 MB.
 
 **Package layout** (`app/src/main/java/<applicationId>/`): `identity`, `pairing`, `discovery`, `signaling`, `media`, `service`, `alarm`, `data`, `compat`, `ui`. Pure-Kotlin logic (SAS derivation, commitment checks, trust decisions, backoff, gate timing, message models) must not import Android classes so it runs in JVM unit tests.
 
@@ -334,7 +343,7 @@ Seven phases, each ending in an installable APK that the user tests on two real 
    - Done when: turning off the baby phone's Wi-Fi makes the parent alarm within the grace period, turning it back on reconnects without user action, force-stopping the baby app alarms, and with the gate on quiet noises stay silent while a loud sound plays in full.
 6. **Multiple parents and video gating**: `watching` messages, per-sender `active` flag, camera stops when nobody watches, parent limit with `busy`, connected-parents list on the baby screen.
    - Done when: three parents connect at once, only those in foreground or PiP receive video, and the baby phone stays below the thermal `SEVERE` state for one hour.
-7. **Polish**: thermal fallback, sound history (R15), alarm settings, camera switch, German strings reviewed, README with install and limitations, edge cases from testing.
+7. **Polish**: app size (see "App size"), thermal fallback, sound history (R15), alarm settings, camera switch, German strings reviewed, README with install and limitations, edge cases from testing.
 
 Do not hand the APK to anyone outside the household before phase 3 is done: until then, anyone on the Wi-Fi can watch.
 
@@ -405,6 +414,6 @@ What changed from the first version and why:
 - **Pairing is simpler and still sound.** The separate ephemeral-ECDH protocol with its own encrypted channel is gone. Pairing now runs inside the same TLS connection as signaling, with a commit-reveal of two random nonces and emojis derived from the nonces plus both certificate fingerprints. Same security (one blind guess in 2^42 for an attacker), one protocol fewer, no HKDF, no hand-rolled encryption.
 - **Security moved from phase 5 to phase 3**, so background operation, reliability and multi-parent work are built on the authenticated transport instead of retrofitted.
 - **Concrete mTLS requirements** (TLS 1.3 only, `needClientAuth`, how the custom key and trust managers must behave, timeouts, frame and connection limits) because those details are where implementations usually fail silently.
-- **Dropped for minimalism**: Room, Protobuf, per-message signatures on top of TLS, per-app language setting, adaptive-layout scaffolds, Material Symbols, multicast lock and the Wi-Fi permissions (not needed with `NsdManager`), any DI framework, R8 minification for v1.
+- **Dropped for minimalism**: Room, Protobuf, per-message signatures on top of TLS, per-app language setting, adaptive-layout scaffolds, Material Symbols, multicast lock and the Wi-Fi permissions (not needed with `NsdManager`), any DI framework. (R8 came back in phase 7 for app size.)
 - **Added for stability**: last-known-address reconnect fast path, network-change callback, alarm-volume warning, audio-focus behaviour, graceful handling of a refused foreground-service restart, Keystore-loss recovery, a documented limitations list, and explicit service restart policies.
 - **Added for the agent**: working rules, a hardening checklist, `docs/PROTOCOL.md` and `docs/DECISIONS.md`, tighter unit-test targets, and decisions on the former open questions so nothing blocks phase 1.
