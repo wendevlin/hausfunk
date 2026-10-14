@@ -15,7 +15,16 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import android.content.res.Configuration
+import android.graphics.Rect
+import androidx.activity.compose.LocalActivity
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -40,11 +49,19 @@ object WatchColors {
 }
 
 /**
- * Phase 2: video with sound, a close button and the connection state. Sound level, last sound,
- * battery and PiP arrive in later phases.
+ * Video with sound, a close button and the connection state. Sound level, last sound and battery
+ * arrive in phase 5.
  */
 @Composable
-fun WatchScreen(session: ParentSession, state: ParentState, onRetry: () -> Unit, onClose: () -> Unit) {
+fun WatchScreen(
+    session: ParentSession,
+    state: ParentState,
+    onRetry: () -> Unit,
+    onClose: () -> Unit,
+    onAspectRatio: (Float) -> Unit = {},
+    onVideoBounds: (Rect) -> Unit = {},
+) {
+    FullScreenInLandscape()
     Box(
         Modifier
             .fillMaxSize()
@@ -68,6 +85,8 @@ fun WatchScreen(session: ParentSession, state: ParentState, onRetry: () -> Unit,
                 session::detach,
                 Modifier.fillMaxSize(),
                 onFirstFrame = { gotFrame = true },
+                onAspectRatio = onAspectRatio,
+                onBounds = onVideoBounds,
             )
         }
         IconButton(
@@ -100,6 +119,22 @@ fun WatchScreen(session: ParentSession, state: ParentState, onRetry: () -> Unit,
                 }
             }
         }
+    }
+}
+
+/** In landscape the video gets the whole screen: system bars hide until swiped in. */
+@Composable
+private fun FullScreenInLandscape() {
+    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val window = LocalActivity.current?.window ?: return
+    val view = LocalView.current
+    DisposableEffect(landscape, window) {
+        val controller = WindowCompat.getInsetsController(window, view)
+        if (landscape) {
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+        }
+        onDispose { controller.show(WindowInsetsCompat.Type.systemBars()) }
     }
 }
 

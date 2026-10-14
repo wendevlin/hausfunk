@@ -99,6 +99,24 @@ Deviations from, or clarifications of, the implementation plan. Newest first.
   release app, and one test build updating the previous one. That key can only sign the debug
   app ID, so it never touches releases.
 
+## Phase 4
+
+- **The services publish their session through the Application** (`babySession`,
+  `parentSession`) instead of a bound service interface. Same process, so this is the plain
+  version of "activities only bind and render"; nothing else in the app can reach them.
+- **Single-pane parent screens on every device (owner's request).** The plan's side-by-side list
+  and video on tablets is gone: one baby at a time, either the list or the video. Two babies at
+  once may come later as a special case.
+- **Back on the baby screen moves the app to the background** instead of stopping: only "Stop"
+  (on screen or in the notification) ends monitoring, as the plan requires for swipe-away.
+- **Video keeps its resolution under load** (`MAINTAIN_RESOLUTION`) and the parent's view ignores
+  aspect changes below 2 %: in the phase 3 test the picture jumped briefly now and then, which
+  matches WebRTC scaling the frames down and up.
+- **The same parent connecting again replaces its old connection** instead of getting `busy`
+  (phase 3 test: tapping the baby again showed the old picture with "no connection").
+- **Parent restart refused in the background** posts a high-importance "Monitoring stopped"
+  notification and stops; it never crashes.
+
 ## Open points for later phases
 
 - **F-Droid and prebuilt libwebrtc.** F-Droid builds from source and is strict about prebuilt

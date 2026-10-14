@@ -1,22 +1,20 @@
 package dev.wendelin.hausfunk.ui.parent
 
+import android.graphics.Rect
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -26,17 +24,14 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.windowsizeclass.WindowSizeClass
-import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,28 +46,27 @@ import dev.wendelin.hausfunk.data.TrustedDevice
 import dev.wendelin.hausfunk.discovery.BabyFinder
 import dev.wendelin.hausfunk.discovery.FoundBaby
 import dev.wendelin.hausfunk.identity.Identity
-import dev.wendelin.hausfunk.media.ParentSession
+import dev.wendelin.hausfunk.media.ParentState
 import dev.wendelin.hausfunk.pairing.ParentPairing
-import dev.wendelin.hausfunk.signaling.Hello
-import dev.wendelin.hausfunk.signaling.PROTOCOL_VERSION
+import dev.wendelin.hausfunk.service.ParentService
+import dev.wendelin.hausfunk.ui.common.AutoPictureInPicture
 import dev.wendelin.hausfunk.ui.common.PermissionHint
-import dev.wendelin.hausfunk.ui.common.appVersion
+import dev.wendelin.hausfunk.ui.common.VideoView
+import dev.wendelin.hausfunk.ui.common.rememberInPictureInPicture
 import dev.wendelin.hausfunk.ui.common.rememberMissingPermissions
 import dev.wendelin.hausfunk.ui.pairing.PairingContent
-import kotlinx.coroutines.flow.filterNotNull
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
- * Runs discovery and the parent session while the parent screens are shown (phase 4 moves the
- * session into a foreground service). Home, watch and pairing share this route so the session
- * survives switching between them and the two-pane layout.
+ * The parent screens: the list of baby devices, the watch screen and pairing. Watching itself runs
+ * in [ParentService], so sound continues with the screen off and in picture-in-picture. One baby
+ * at a time, one screen at a time, on phones and tablets alike.
  */
 @Composable
 fun ParentRoute(
     app: HausfunkApplication,
     deviceName: String,
     trusted: List<TrustedDevice>,
-    windowSizeClass: WindowSizeClass,
     onBack: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
@@ -81,12 +75,6 @@ fun ParentRoute(
     val identity by produceState<Identity?>(null) { value = app.identity.await() }
     val finder = remember { BabyFinder(context) }
     DisposableEffect(Unit) { onDispose { finder.release() } }
-    val session = remember(identity) { identity?.let { ParentSession(context, it, app::currentTrustedIds) } }
-    DisposableEffect(session) { onDispose { session?.release() } }
-    LaunchedEffect(session) {
-        // A baby removed in the settings is disconnected at once.
-        if (session != null) app.trustedIds.filterNotNull().collect(session::onTrustChanged)
-    }
     if (missing.isEmpty()) {
         DisposableEffect(Unit) {
             finder.start()
@@ -94,25 +82,21 @@ fun ParentRoute(
         }
     }
     val found by finder.babies.collectAsState()
-    var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
+    val session by app.parentSession.collectAsState()
+    val state by remember(session) { session?.state ?: MutableStateFlow(ParentState.Idle) }.collectAsState()
+    val watchedId = state.babyId
     var pairing by remember { mutableStateOf<ParentPairing?>(null) }
     // Pairing is mutual and independent of roles: any paired device may be the baby today.
     val trustedIds = trusted.map { it.deviceId }.toSet()
     val newBabies = found.filter { it.deviceId !in trustedIds }
 
     fun watch(deviceId: String) {
+        // Tapping the baby that is already on screen must not start over.
+        if (deviceId == watchedId && (state is ParentState.Connecting || state is ParentState.Connected)) return
         val baby = found.firstOrNull { it.deviceId == deviceId } ?: return
-        val s = session ?: return
-        selectedId = deviceId
-        app.appScope.launch {
-            val hello = Hello(PROTOCOL_VERSION, app.identity.await().deviceId, deviceName, appVersion(context), watching = true)
-            s.connect(baby, hello)
-        }
+        ParentService.watch(context, baby)
     }
-    fun stopWatching() {
-        selectedId = null
-        session?.disconnect()
-    }
+    fun stopWatching() = ParentService.stop(context)
     fun pair(baby: FoundBaby) {
         val id = identity ?: return
         val p = ParentPairing(id, deviceName, app::currentTrustedIds) { app.storePaired(it, Role.BABY) }
@@ -135,12 +119,27 @@ fun ParentRoute(
     }
 
     val s = session
-    val twoPane = windowSizeClass.widthSizeClass != WindowWidthSizeClass.Compact
-    val watching = selectedId != null && s != null
-    if (watching && !twoPane) {
-        val state by s.state.collectAsState()
+    if (s != null && watchedId != null) {
+        var aspectRatio by remember { mutableFloatStateOf(16f / 9f) }
+        var videoBounds by remember { mutableStateOf<Rect?>(null) }
+        val inPip = rememberInPictureInPicture()
+        AutoPictureInPicture(enabled = state is ParentState.Connected, aspectRatio = aspectRatio, sourceRect = videoBounds)
+        if (inPip) {
+            // Picture-in-picture: the video and nothing else.
+            Box(Modifier.fillMaxSize().background(WatchColors.background)) {
+                VideoView(s.eglBase, s::attach, s::detach, Modifier.fillMaxSize(), onAspectRatio = { aspectRatio = it })
+            }
+            return
+        }
         BackHandler { stopWatching() }
-        WatchScreen(s, state, onRetry = { selectedId?.let(::watch) }, onClose = ::stopWatching)
+        WatchScreen(
+            s,
+            state,
+            onRetry = { watchedId.let(::watch) },
+            onClose = ::stopWatching,
+            onAspectRatio = { aspectRatio = it },
+            onVideoBounds = { videoBounds = it },
+        )
         return
     }
     ParentHomeScreen(
@@ -148,32 +147,16 @@ fun ParentRoute(
         newBabies = newBabies,
         onlineIds = found.map { it.deviceId }.toSet(),
         missing = missing,
-        selectedId = selectedId,
-        twoPane = twoPane,
         onBack = onBack,
         onOpenSettings = onOpenSettings,
         onSelect = ::watch,
         onPair = ::pair,
-        watchPane = {
-            if (watching) {
-                val state by s.state.collectAsState()
-                WatchScreen(s, state, onRetry = { selectedId?.let(::watch) }, onClose = ::stopWatching)
-            } else {
-                Text(
-                    stringResource(R.string.parent_select_hint),
-                    color = WatchColors.onBackground,
-                    style = MaterialTheme.typography.bodyLarge,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(24.dp),
-                )
-            }
-        },
     )
 }
 
 /**
  * Paired devices, online while they run as baby on this Wi-Fi, and below them baby devices that
- * are not paired yet (tap to pair). Medium and expanded widths show the watch pane beside the list.
+ * are not paired yet (tap to pair).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -182,13 +165,10 @@ fun ParentHomeScreen(
     newBabies: List<FoundBaby>,
     onlineIds: Set<String>,
     missing: List<String>,
-    selectedId: String?,
-    twoPane: Boolean,
     onBack: () -> Unit,
     onOpenSettings: () -> Unit,
     onSelect: (deviceId: String) -> Unit,
     onPair: (FoundBaby) -> Unit,
-    watchPane: @Composable () -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -207,15 +187,16 @@ fun ParentHomeScreen(
             )
         },
     ) { padding ->
-        Row(
+        Box(
             Modifier
                 .fillMaxSize()
                 .padding(padding),
+            contentAlignment = Alignment.TopCenter,
         ) {
             Column(
                 Modifier
-                    .fillMaxHeight()
-                    .then(if (twoPane) Modifier.width(360.dp) else Modifier.fillMaxWidth()),
+                    .fillMaxSize()
+                    .widthIn(max = 640.dp),
             ) {
                 if (missing.isNotEmpty()) PermissionHint(missing, Modifier.padding(16.dp))
                 if (paired.isEmpty() && newBabies.isEmpty()) {
@@ -241,15 +222,7 @@ fun ParentHomeScreen(
                             ListItem(
                                 headlineContent = { Text(device.name) },
                                 supportingContent = {
-                                    Text(
-                                        stringResource(
-                                            when {
-                                                device.deviceId == selectedId -> R.string.parent_watching
-                                                online -> R.string.parent_online
-                                                else -> R.string.parent_offline
-                                            },
-                                        ),
-                                    )
+                                    Text(stringResource(if (online) R.string.parent_online else R.string.parent_offline))
                                 },
                                 modifier = if (online) Modifier.clickable { onSelect(device.deviceId) } else Modifier,
                             )
@@ -263,19 +236,6 @@ fun ParentHomeScreen(
                             )
                         }
                     }
-                }
-            }
-            if (twoPane) {
-                // The watch screen is always dark so it never lights up a bedroom.
-                Box(
-                    Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .padding(start = 8.dp, end = 16.dp, bottom = 16.dp)
-                        .background(WatchColors.background, MaterialTheme.shapes.large),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    watchPane()
                 }
             }
         }

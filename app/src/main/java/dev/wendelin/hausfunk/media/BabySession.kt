@@ -46,6 +46,7 @@ import org.webrtc.MediaConstraints
 import org.webrtc.MediaStreamTrack
 import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
+import org.webrtc.RtpParameters
 import org.webrtc.RtpTransceiver
 import org.webrtc.SessionDescription
 import org.webrtc.SurfaceTextureHelper
@@ -326,8 +327,11 @@ class BabySession(
     }
 
     private fun onIncoming(connection: SignalingConnection) {
+        // The same parent connecting again (it reconnected or tapped us again) replaces its old
+        // connection instead of being told that we are busy.
+        peer?.let { if (it.connection.peerDeviceId == connection.peerDeviceId) close(it, sendBye = false) }
         if (stopped || peer != null) {
-            // Phase 2 serves one parent at a time.
+            // One parent at a time until phase 6.
             thread(name = "baby-busy") {
                 try {
                     connection.send(Busy)
@@ -438,6 +442,9 @@ class BabySession(
             it.maxBitrateBps = MAX_BITRATE_BPS
             it.maxFramerate = FPS
         }
+        // When bandwidth or CPU runs short, drop frames rather than resolution: a sharp picture
+        // matters more than motion, and a changing size makes the parent's view jump.
+        parameters.degradationPreference = RtpParameters.DegradationPreference.MAINTAIN_RESOLUTION
         sender.parameters = parameters
     }
 

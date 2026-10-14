@@ -12,10 +12,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
+import android.graphics.Rect
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import org.webrtc.EglBase
 import org.webrtc.RendererCommon
 import org.webrtc.SurfaceViewRenderer
 import org.webrtc.VideoSink
+import kotlin.math.abs
 
 /**
  * A WebRTC video, letterboxed, never cropped or stretched. SurfaceViewRenderer crops frames to its
@@ -29,13 +33,22 @@ fun VideoView(
     detach: (VideoSink) -> Unit,
     modifier: Modifier = Modifier,
     onFirstFrame: () -> Unit = {},
+    /** Width / height of the video as displayed, whenever it changes noticeably. */
+    onAspectRatio: (Float) -> Unit = {},
+    /** Where the video is drawn, in window coordinates (for the picture-in-picture animation). */
+    onBounds: (Rect) -> Unit = {},
 ) {
     // Width / height of the frames as displayed; 0 until the first frame arrives.
     var aspectRatio by remember { mutableFloatStateOf(0f) }
     val firstFrame by rememberUpdatedState(onFirstFrame)
+    val aspectChanged by rememberUpdatedState(onAspectRatio)
     Box(modifier, contentAlignment = Alignment.Center) {
         AndroidView(
-            modifier = if (aspectRatio > 0f) Modifier.aspectRatio(aspectRatio) else Modifier.fillMaxSize(),
+            modifier = (if (aspectRatio > 0f) Modifier.aspectRatio(aspectRatio) else Modifier.fillMaxSize())
+                .onGloballyPositioned { coordinates ->
+                    val b = coordinates.boundsInWindow()
+                    onBounds(Rect(b.left.toInt(), b.top.toInt(), b.right.toInt(), b.bottom.toInt()))
+                },
             factory = { context ->
                 SurfaceViewRenderer(context).apply {
                     init(
@@ -47,7 +60,13 @@ fun VideoView(
                             override fun onFrameResolutionChanged(width: Int, height: Int, rotation: Int) {
                                 if (width <= 0 || height <= 0) return
                                 val sideways = rotation % 180 != 0
-                                aspectRatio = if (sideways) height.toFloat() / width else width.toFloat() / height
+                                val ratio = if (sideways) height.toFloat() / width else width.toFloat() / height
+                                // Ignore rounding-level changes (e.g. 1280x720 to 852x480): every
+                                // new size re-lays out the surface, which shows as a flicker.
+                                if (abs(ratio - aspectRatio) > ASPECT_TOLERANCE * ratio) {
+                                    aspectRatio = ratio
+                                    aspectChanged(ratio)
+                                }
                             }
                         },
                     )
@@ -63,3 +82,6 @@ fun VideoView(
         )
     }
 }
+
+/** Relative aspect-ratio change below which the view keeps its size. */
+private const val ASPECT_TOLERANCE = 0.02f

@@ -44,7 +44,6 @@
     <string name="parent_title">Babygeräte</string>
     <string name="parent_empty">Noch kein Babygerät. Wähle auf dem anderen Handy „Baby“, dann erscheint es hier.</string>
     <string name="parent_offline">Offline</string>
-    <string name="parent_select_hint">Wähle ein Babygerät, um die Überwachung zu starten.</string>
 
     <string name="settings_title">Einstellungen</string>
     <string name="settings_this_device">Dieses Gerät</string>
@@ -67,7 +66,6 @@
     <string name="baby_failed">Überwachung konnte nicht starten. Geh zurück und versuche es erneut.</string>
     <string name="baby_no_camera">Keine Kamera verfügbar, es wird nur Ton gesendet.</string>
     <string name="parent_online">Online · zum Zusehen tippen</string>
-    <string name="parent_watching">Wird angesehen</string>
     <string name="watch_stop">Zusehen beenden</string>
     <string name="watch_connecting">Verbinde mit %1$s …</string>
     <string name="watch_busy">%1$s überträgt schon an ein anderes Elterngerät.</string>
@@ -89,4 +87,11 @@
     <string name="baby_screen_off">Bild aus</string>
     <string name="baby_screen_off_hint">Die Überwachung läuft weiter. Tippen zeigt den Bildschirm wieder.</string>
     <string name="pairing_connecting">Verbinde …</string>
+    <string name="channel_monitoring">Überwachung</string>
+    <string name="channel_stopped">Überwachung beendet</string>
+    <string name="notification_baby">Babygerät: sendet Bild und Ton</string>
+    <string name="notification_parent">Hört %1$s</string>
+    <string name="notification_stopped_title">Überwachung beendet</string>
+    <string name="notification_stopped_body">Android hat die Überwachung im Hintergrund beendet. Tippe, um sie neu zu starten.</string>
+    <string name="action_stop">Beenden</string>
 </resources>

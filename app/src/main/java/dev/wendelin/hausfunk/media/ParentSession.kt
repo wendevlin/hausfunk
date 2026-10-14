@@ -37,12 +37,19 @@ import org.webrtc.VideoTrack
 import org.webrtc.audio.JavaAudioDeviceModule
 
 sealed interface ParentState {
+    /** The baby this state is about; null while idle. */
+    val babyId: String? get() = (this as? WithBaby)?.baby?.deviceId
+
+    sealed interface WithBaby : ParentState {
+        val baby: FoundBaby
+    }
+
     data object Idle : ParentState
-    data class Connecting(val baby: FoundBaby) : ParentState
-    data class Connected(val baby: FoundBaby) : ParentState
+    data class Connecting(override val baby: FoundBaby) : WithBaby
+    data class Connected(override val baby: FoundBaby) : WithBaby
     /** The baby device already serves another parent. */
-    data class Busy(val baby: FoundBaby) : ParentState
-    data class Lost(val baby: FoundBaby) : ParentState
+    data class Busy(override val baby: FoundBaby) : WithBaby
+    data class Lost(override val baby: FoundBaby) : WithBaby
 }
 
 /**

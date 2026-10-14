@@ -8,36 +8,29 @@ any reference to them in `README.md`) once the project is done, i.e. after phase
 
 ## Where we are
 
-- **Phases 1 and 2 are merged and passed their gates** on two Android 16 phones. The release
-  path works: `0.1.0` and `0.1.1` built and signed by CI, `0.1.1` installed as an update.
-  Release tags are the bare version (no `v`).
-- **Phase 3 is written and builds, but has not run on a phone yet.** 44 unit tests pass,
-  including SAS test vectors, the pairing state machine and real TLS 1.3 handshakes on the JVM
-  with test certificates. What only phones can show: the Keystore key signing TLS handshakes
-  (see DECISIONS, `DIGEST_NONE`), and pairing over mDNS.
-- Google Play Protect warns when installing the APK ("unknown app"). Long-term fix: Google's
-  developer verification (registering the package name and signing key); see the chat of
-  2026-10-14. Not done yet.
+- **Phases 1 to 3 are merged and passed their gates** on a Galaxy Z Flip 7 and a Galaxy Tab S9
+  (Android 16): pairing with emojis both ways, mutual TLS, video and sound. Release path works
+  (`0.1.0` → `0.1.1`, bare version tags). Debug builds are a separate app ("Hausfunk (Debug)").
+- **Phase 4 is written and builds, not yet run on a phone.** `BabyService` (camera|microphone)
+  and `ParentService` (mediaPlayback) own the sessions, with wake and Wi-Fi locks and a "Stop"
+  notification. Picture-in-picture while watching. Single-pane parent screens.
+- Google Play Protect warns when installing ("unknown app"); developer verification with Google
+  is the long-term fix, not done yet.
 
-## Next steps (human): phase 3 gate
+## Next steps (human): phase 4 gate
 
-Install the debug APK from the PR's CI run on both phones. Debug builds are a separate app
-("Hausfunk (Debug)", red-ringed icon, ID `dev.wendelin.hausfunk.debug`) next to the release app,
-signed with a shared debug key, so later CI builds install as updates. Then:
+Install the debug APK from the PR's CI run (installs as an update over the previous debug build).
 
-1. Close the release app on both phones (swipe it away from recents): it may hold the camera.
-2. Phone A: Baby. It shows its own camera picture. Phone B: Parent. A appears under "Neu in
-   diesem WLAN"; tap it. Both show 7 emojis with names; tap "Passt" on both.
-3. Tap A in B's list: video with sound. Then swap roles: no new pairing is needed.
-4. "Passt nicht" on either phone stores nothing.
-5. Settings → remove the other device while watching: the stream stops at once.
-6. Baby: "Bild aus" turns the screen black; a tap brings it back. Camera switch works.
+1. Baby phone: Baby (a notification "sending picture and sound" appears). Parent: tap the baby.
+2. Turn both screens off for 30 minutes: sound still arrives.
+3. Parent: Home gesture while watching → picture-in-picture. Close the PiP window → sound
+   continues (notification "Listening to …").
+4. Swipe the app away from recents on both phones: monitoring continues; "Stop" in the
+   notification ends it.
+5. Rotate both phones while streaming: no interruption. Parent in landscape: full-screen video.
 
-First phone test (2026-10-14, Flip 7 + Tab S9, both Android 16): pairing worked one way; the other
-way found nothing (fixed: role-independent trust); sound but black video in both directions
-(unclear; the release app was installed alongside, see step 1, and the baby preview now shows
-whether the camera delivers); locking the baby stops sound without a warning (expected until
-phases 4 and 5).
+Uncertain, please check explicitly: whether the Flip 7 keeps the camera running with the screen
+off (some phones stop it), and whether the video still jumps now and then.
 
 ## Notes for the next agent session
 

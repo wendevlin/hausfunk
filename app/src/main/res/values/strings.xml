@@ -46,7 +46,6 @@
     <string name="parent_title">Baby devices</string>
     <string name="parent_empty">No baby device yet. Choose Baby on the other phone; it then appears here.</string>
     <string name="parent_offline">Offline</string>
-    <string name="parent_select_hint">Choose a baby device to start monitoring.</string>
 
     <string name="settings_title">Settings</string>
     <string name="settings_this_device">This device</string>
@@ -69,7 +68,6 @@
     <string name="baby_failed">Could not start monitoring. Go back and try again.</string>
     <string name="baby_no_camera">No camera available, sending sound only.</string>
     <string name="parent_online">Online · tap to watch</string>
-    <string name="parent_watching">Watching</string>
     <string name="watch_stop">Stop watching</string>
     <string name="watch_connecting">Connecting to %1$s…</string>
     <string name="watch_busy">%1$s is already streaming to another parent device.</string>
@@ -91,4 +89,11 @@
     <string name="baby_screen_off">Screen off</string>
     <string name="baby_screen_off_hint">Monitoring continues. Tap to show the screen again.</string>
     <string name="pairing_connecting">Connecting…</string>
+    <string name="channel_monitoring">Monitoring</string>
+    <string name="channel_stopped">Monitoring stopped</string>
+    <string name="notification_baby">Baby device: sending picture and sound</string>
+    <string name="notification_parent">Listening to %1$s</string>
+    <string name="notification_stopped_title">Monitoring stopped</string>
+    <string name="notification_stopped_body">Android ended monitoring in the background. Tap to start it again.</string>
+    <string name="action_stop">Stop</string>
 </resources>

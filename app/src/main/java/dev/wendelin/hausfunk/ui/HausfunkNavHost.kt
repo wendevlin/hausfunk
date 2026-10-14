@@ -43,7 +43,15 @@ fun HausfunkNavHost(app: HausfunkApplication, windowSizeClass: WindowSizeClass) 
     }
 
     val navController = rememberNavController()
-    val startDestination = remember { if (loaded.onboardingComplete) Routes.ROLE else Routes.ONBOARDING }
+    // Monitoring that is still running (screen off, app swiped away) brings its screen back.
+    val startDestination = remember {
+        when {
+            !loaded.onboardingComplete -> Routes.ONBOARDING
+            app.babySession.value != null -> Routes.BABY
+            app.parentSession.value != null -> Routes.PARENT
+            else -> Routes.ROLE
+        }
+    }
     val openSettings = { navController.navigate(Routes.SETTINGS) { launchSingleTop = true } }
 
     NavHost(navController = navController, startDestination = startDestination) {
@@ -75,8 +83,11 @@ fun HausfunkNavHost(app: HausfunkApplication, windowSizeClass: WindowSizeClass) 
         composable(Routes.BABY) {
             BabyRoute(
                 app = app,
-                deviceName = loaded.deviceName,
-                onStop = { navController.popBackStack(Routes.ROLE, inclusive = false) },
+                onStop = {
+                    if (!navController.popBackStack(Routes.ROLE, inclusive = false)) {
+                        navController.navigate(Routes.ROLE) { popUpTo(Routes.BABY) { inclusive = true } }
+                    }
+                },
                 onOpenSettings = openSettings,
             )
         }
@@ -85,8 +96,11 @@ fun HausfunkNavHost(app: HausfunkApplication, windowSizeClass: WindowSizeClass) 
                 app = app,
                 deviceName = loaded.deviceName,
                 trusted = trusted,
-                windowSizeClass = windowSizeClass,
-                onBack = { navController.popBackStack() },
+                onBack = {
+                    if (!navController.popBackStack()) {
+                        navController.navigate(Routes.ROLE) { popUpTo(Routes.PARENT) { inclusive = true } }
+                    }
+                },
                 onOpenSettings = openSettings,
             )
         }

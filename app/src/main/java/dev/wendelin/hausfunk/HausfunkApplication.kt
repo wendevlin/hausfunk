@@ -10,7 +10,11 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import dev.wendelin.hausfunk.media.BabySession
+import dev.wendelin.hausfunk.media.ParentSession
+import dev.wendelin.hausfunk.service.Notifications
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -33,6 +37,12 @@ class HausfunkApplication : Application() {
     lateinit var identity: Deferred<Identity>
         private set
 
+    /** The running baby session, owned by BabyService; null while not monitoring as baby. */
+    val babySession = MutableStateFlow<BabySession?>(null)
+
+    /** The running parent session, owned by ParentService; null while not watching. */
+    val parentSession = MutableStateFlow<ParentSession?>(null)
+
     /** Device IDs in the trust store; null until it has been read once. */
     lateinit var trustedIds: StateFlow<Set<String>?>
         private set
@@ -54,6 +64,7 @@ class HausfunkApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        Notifications.createChannels(this)
         settings = SettingsRepository(this, appScope)
         trustStore = TrustStoreRepository(this, appScope)
         trustedIds = trustStore.devices
