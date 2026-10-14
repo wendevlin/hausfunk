@@ -11,39 +11,18 @@ any reference to them in `README.md`) once the project is done, i.e. after phase
 - **Phase 1 is merged** (`main`): skeleton, onboarding, role picker, settings, identity, CI, logo.
   The owner checked it on two phones. The signed-release test (`v0.1.0` → `v0.1.1`) was
   deferred by the owner to the end of phase 2.
-- **Phase 2 is written and builds, but has not run on a phone yet.** Nothing could be tested
-  on a device here (no emulator). `assembleDebug testDebugUnitTest lint` passes; 21 unit tests
-  cover framing, message codec, the plain TCP transport (loopback) and `SerialExecutor`.
-  - Discovery: `discovery/` (NsdManager), Android 12–13 resolve queue in `compat/NsdCompat.kt`.
-  - Signaling: `signaling/` messages, codec, framing, `SignalingTransport`, and the temporary
-    `PlainTcpTransport` (unauthenticated, phase 2 only; delete in phase 3).
-  - Media: `media/BabySession.kt` (camera + mic, one parent), `media/ParentSession.kt`
-    (receive, render, play as media). Both live in the activity until phase 4.
-  - UI: baby screen shows waiting/streaming and a test-build warning; parent home lists
-    unpaired "nearby" babies (temporary) and opens the watch screen/pane.
-  - New onboarding step for `ACCESS_LOCAL_NETWORK` on Android 17+ (approved, see DECISIONS).
+- **Phase 2 is merged and passed its gate** on two Android 16 phones (2026-10-14): discovery,
+  video with sound, rotation, stopping. Found there: portrait video was cropped, because
+  `SurfaceViewRenderer` crops frames to its own aspect ratio; the view is now sized to the
+  video's aspect ratio (`ui/parent/VideoView.kt`).
+  - Not yet checked: Android 17 local network permission (no Android 17 phone in the household).
 - Plan updated: local network permission, and app size work in phase 7.
 
-## Next steps (human): phase 2 gate
+## Next steps
 
-Install the debug APK from the CI run of this branch on both phones (same Wi-Fi).
-
-1. Phone A: role Baby. It should say "Waiting for parents" and show the red test-build warning.
-2. Phone B: role Parent. Under "Nearby" phone A's name should appear within a few seconds.
-3. Tap it: within a few seconds phone B shows phone A's camera with sound. Check volume keys,
-   rotating either phone, and that the picture is upright.
-4. Tap the X on phone B: phone A goes back to "Waiting for parents".
-5. Report: Android versions of both phones, and anything that did not work.
-
-Uncertain, please check explicitly:
-- On Android 17 phones: does discovery work after allowing "local network" in onboarding?
-- Rotating the baby phone during streaming (the activity is not recreated, but the camera
-  orientation handling is untested).
-- Sound quality: echo cancellation and noise suppression are off on purpose (quiet sounds).
-- The baby phone keeps its screen on while streaming (temporary until phase 4).
-
-After the gate: tag `v0.1.0`/`v0.1.1` for the deferred release test (signing secrets first), then
-phase 3.
+1. Owner adds the four `HAUSFUNK_*` signing secrets; then tag `v0.1.0` and `v0.1.1` for the
+   deferred release/update test (uninstall the debug build first).
+2. Phase 3: pairing, trust store, mutual TLS; delete `PlainTcpTransport`.
 
 ## Notes for the next agent session
 
