@@ -15,7 +15,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -96,10 +95,10 @@ fun ParentRoute(
     }
     val found by finder.babies.collectAsState()
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
-    var adding by rememberSaveable { mutableStateOf(false) }
     var pairing by remember { mutableStateOf<ParentPairing?>(null) }
-    val babies = trusted.filter { it.role == Role.BABY }
+    // Pairing is mutual and independent of roles: any paired device may be the baby today.
     val trustedIds = trusted.map { it.deviceId }.toSet()
+    val newBabies = found.filter { it.deviceId !in trustedIds }
 
     fun watch(deviceId: String) {
         val baby = found.firstOrNull { it.deviceId == deviceId } ?: return
@@ -120,29 +119,18 @@ fun ParentRoute(
         pairing = p
         p.start(baby, app.appScope)
     }
-    fun endAdding() {
+    fun endPairing() {
         pairing?.cancel()
         pairing = null
-        adding = false
     }
 
     val p = pairing
     if (p != null) {
         val pairingState by p.state.collectAsState()
-        BackHandler { endAdding() }
+        BackHandler { endPairing() }
         Surface(Modifier.fillMaxSize()) {
-            PairingContent(pairingState, onConfirm = p::confirm, onReject = ::endAdding, onClose = ::endAdding)
+            PairingContent(pairingState, onConfirm = p::confirm, onReject = ::endPairing, onClose = ::endPairing)
         }
-        return
-    }
-    if (adding) {
-        BackHandler { endAdding() }
-        AddBabyScreen(
-            candidates = found.filter { it.pairable && it.deviceId !in trustedIds },
-            missing = missing,
-            onBack = ::endAdding,
-            onSelect = ::pair,
-        )
         return
     }
 
@@ -156,7 +144,8 @@ fun ParentRoute(
         return
     }
     ParentHomeScreen(
-        babies = babies,
+        paired = trusted,
+        newBabies = newBabies,
         onlineIds = found.map { it.deviceId }.toSet(),
         missing = missing,
         selectedId = selectedId,
@@ -164,7 +153,7 @@ fun ParentRoute(
         onBack = onBack,
         onOpenSettings = onOpenSettings,
         onSelect = ::watch,
-        onAdd = { adding = true },
+        onPair = ::pair,
         watchPane = {
             if (watching) {
                 val state by s.state.collectAsState()
@@ -183,13 +172,14 @@ fun ParentRoute(
 }
 
 /**
- * Paired baby devices, online when seen on the Wi-Fi. Medium and expanded widths show the watch
- * pane beside the list.
+ * Paired devices, online while they run as baby on this Wi-Fi, and below them baby devices that
+ * are not paired yet (tap to pair). Medium and expanded widths show the watch pane beside the list.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ParentHomeScreen(
-    babies: List<TrustedDevice>,
+    paired: List<TrustedDevice>,
+    newBabies: List<FoundBaby>,
     onlineIds: Set<String>,
     missing: List<String>,
     selectedId: String?,
@@ -197,7 +187,7 @@ fun ParentHomeScreen(
     onBack: () -> Unit,
     onOpenSettings: () -> Unit,
     onSelect: (deviceId: String) -> Unit,
-    onAdd: () -> Unit,
+    onPair: (FoundBaby) -> Unit,
     watchPane: @Composable () -> Unit,
 ) {
     Scaffold(
@@ -228,7 +218,7 @@ fun ParentHomeScreen(
                     .then(if (twoPane) Modifier.width(360.dp) else Modifier.fillMaxWidth()),
             ) {
                 if (missing.isNotEmpty()) PermissionHint(missing, Modifier.padding(16.dp))
-                if (babies.isEmpty()) {
+                if (paired.isEmpty() && newBabies.isEmpty()) {
                     Box(
                         Modifier
                             .weight(1f)
@@ -245,35 +235,34 @@ fun ParentHomeScreen(
                     }
                 } else {
                     LazyColumn(Modifier.weight(1f)) {
-                        items(babies, key = { it.deviceId }) { baby ->
-                            val online = baby.deviceId in onlineIds
+                        if (paired.isNotEmpty()) item(key = "paired") { SectionTitle(stringResource(R.string.parent_paired_section)) }
+                        items(paired, key = { it.deviceId }) { device ->
+                            val online = device.deviceId in onlineIds
                             ListItem(
-                                headlineContent = { Text(baby.name) },
+                                headlineContent = { Text(device.name) },
                                 supportingContent = {
                                     Text(
                                         stringResource(
                                             when {
-                                                baby.deviceId == selectedId -> R.string.parent_watching
+                                                device.deviceId == selectedId -> R.string.parent_watching
                                                 online -> R.string.parent_online
                                                 else -> R.string.parent_offline
                                             },
                                         ),
                                     )
                                 },
-                                modifier = if (online) Modifier.clickable { onSelect(baby.deviceId) } else Modifier,
+                                modifier = if (online) Modifier.clickable { onSelect(device.deviceId) } else Modifier,
+                            )
+                        }
+                        if (newBabies.isNotEmpty()) item(key = "new") { SectionTitle(stringResource(R.string.parent_new_section)) }
+                        items(newBabies, key = { "new-" + it.deviceId }) { baby ->
+                            ListItem(
+                                headlineContent = { Text(baby.name) },
+                                supportingContent = { Text(stringResource(R.string.parent_tap_to_pair)) },
+                                modifier = Modifier.clickable { onPair(baby) },
                             )
                         }
                     }
-                }
-                Button(
-                    onClick = onAdd,
-                    enabled = missing.isEmpty(),
-                    modifier = Modifier
-                        .align(Alignment.End)
-                        .padding(16.dp),
-                ) {
-                    Icon(Icons.Outlined.Add, contentDescription = null)
-                    Text(stringResource(R.string.parent_add), modifier = Modifier.padding(start = 8.dp))
                 }
             }
             if (twoPane) {
@@ -293,50 +282,12 @@ fun ParentHomeScreen(
     }
 }
 
-/** Baby devices whose pairing window is open and that are not paired yet. */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AddBabyScreen(candidates: List<FoundBaby>, missing: List<String>, onBack: () -> Unit, onSelect: (FoundBaby) -> Unit) {
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.parent_add)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(R.string.action_back))
-                    }
-                },
-            )
-        },
-    ) { padding ->
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(padding),
-        ) {
-            if (missing.isNotEmpty()) PermissionHint(missing, Modifier.padding(16.dp))
-            Text(
-                stringResource(R.string.parent_add_hint),
-                style = MaterialTheme.typography.bodyLarge,
-                modifier = Modifier.padding(16.dp),
-            )
-            if (candidates.isEmpty()) {
-                Text(
-                    stringResource(R.string.parent_searching),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-            }
-            LazyColumn(Modifier.weight(1f)) {
-                items(candidates, key = { it.deviceId }) { baby ->
-                    ListItem(
-                        headlineContent = { Text(baby.name) },
-                        supportingContent = { Text(stringResource(R.string.parent_tap_to_pair)) },
-                        modifier = Modifier.clickable { onSelect(baby) },
-                    )
-                }
-            }
-        }
-    }
+private fun SectionTitle(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
+    )
 }

@@ -12,7 +12,6 @@
     <string name="action_rename">Rename</string>
     <string name="action_remove">Remove</string>
     <string name="action_settings">Settings</string>
-    <string name="action_more">More options</string>
 
     <string name="onboarding_step">Step %1$d of %2$d</string>
     <string name="onboarding_name_title">Name this device</string>
@@ -41,13 +40,11 @@
 
     <string name="baby_waiting">Waiting for parents</string>
     <string name="baby_no_parents">No parent device is connected.</string>
-    <string name="baby_pair">Pair new parent</string>
     <string name="baby_stop">Stop</string>
     <string name="baby_switch_camera">Switch camera</string>
 
     <string name="parent_title">Baby devices</string>
-    <string name="parent_empty">No baby device paired yet. On the baby phone choose Baby and tap “Pair new parent”, then tap “Add baby device” here.</string>
-    <string name="parent_add">Add baby device</string>
+    <string name="parent_empty">No baby device yet. Choose Baby on the other phone; it then appears here.</string>
     <string name="parent_offline">Offline</string>
     <string name="parent_select_hint">Choose a baby device to start monitoring.</string>
 
@@ -71,25 +68,27 @@
     <string name="baby_connected_to">Connected to %1$s.</string>
     <string name="baby_failed">Could not start monitoring. Go back and try again.</string>
     <string name="baby_no_camera">No camera available, sending sound only.</string>
-    <string name="parent_searching">Searching for baby devices on this Wi-Fi…</string>
     <string name="parent_online">Online · tap to watch</string>
     <string name="parent_watching">Watching</string>
     <string name="watch_stop">Stop watching</string>
     <string name="watch_connecting">Connecting to %1$s…</string>
     <string name="watch_busy">%1$s is already streaming to another parent device.</string>
     <string name="watch_lost">Connection to %1$s lost.</string>
-    <string name="baby_pairing_open_title">Ready to pair</string>
-    <string name="baby_pairing_open_body">On the parent phone, open Hausfunk, choose Parent and tap “Add baby device”. This stays open for 2 minutes.</string>
-    <string name="pairing_connecting">Connecting…</string>
     <string name="pairing_compare_title">Compare the emojis</string>
-    <string name="pairing_compare_body">%1$s shows emojis too. Are they the same, in the same order?</string>
-    <string name="pairing_match">They match</string>
-    <string name="pairing_no_match">Don’t match</string>
+    <string name="pairing_compare_body">Does %1$s show the same emojis in the same order? Tap “Match” on both devices.</string>
+    <string name="pairing_match">Match</string>
+    <string name="pairing_no_match">No match</string>
     <string name="pairing_waiting_for_peer">Waiting for %1$s to confirm…</string>
     <string name="pairing_done_title">Paired</string>
     <string name="pairing_done_body">%1$s is now paired. From now on the two phones connect on their own.</string>
     <string name="pairing_failed_title">Not paired</string>
     <string name="pairing_failed_body">Pairing did not finish, so nothing was saved. Try again on both phones.</string>
-    <string name="parent_add_hint">On the baby phone, choose Baby and tap “Pair new parent”. It then appears here.</string>
-    <string name="parent_tap_to_pair">Tap to pair</string>
+    <string name="parent_tap_to_pair">New · tap to pair</string>
+    <string name="parent_paired_section">Paired</string>
+    <string name="parent_new_section">New on this Wi-Fi</string>
+    <string name="watch_no_picture">No picture from the baby device yet.</string>
+    <string name="baby_camera_error">The camera is not working. Another app may be using it.</string>
+    <string name="baby_screen_off">Screen off</string>
+    <string name="baby_screen_off_hint">Monitoring continues. Tap to show the screen again.</string>
+    <string name="pairing_connecting">Connecting…</string>
 </resources>

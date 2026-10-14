@@ -23,7 +23,10 @@ import dev.wendelin.hausfunk.identity.Identity
 import dev.wendelin.hausfunk.identity.PeerClass
 import dev.wendelin.hausfunk.pairing.PairedPeer
 import dev.wendelin.hausfunk.pairing.PairingRunner
-import java.util.concurrent.Future
+import android.os.SystemClock
+import dev.wendelin.hausfunk.pairing.PairingState
+import dev.wendelin.hausfunk.signaling.PairCommit
+import org.webrtc.VideoSink
 import java.io.IOException
 import kotlin.concurrent.thread
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -53,20 +56,22 @@ import org.webrtc.audio.JavaAudioDeviceModule
 data class BabyState(
     /** Name of the connected parent, null while waiting. */
     val parentName: String? = null,
-    /** False if the camera could not be opened; sound still works. */
+    /** False if the phone has no camera; sound still works. */
     val cameraAvailable: Boolean = true,
+    /** The camera reported an error or was taken away (e.g. by another app). */
+    val cameraError: Boolean = false,
+    /** More than one camera: front and back can be switched. */
+    val canSwitchCamera: Boolean = false,
     val failed: Boolean = false,
-    /** A parent may start pairing (for up to 120 s). */
-    val pairingWindowOpen: Boolean = false,
-    /** The pairing exchange in progress or just ended, until the user dismisses it. */
+    /** A parent asking to pair, from its request until the user dismisses the result. */
     val pairing: PairingRunner? = null,
 )
 
 /**
  * Baby side: captures camera and microphone once and streams them to one paired parent (several
- * parents arrive in phase 6), and runs the pairing window. Owns every WebRTC object; all of them
- * are touched only on the session's own thread. [stop] is final; create a new session to start
- * again.
+ * parents arrive in phase 6). An unknown parent may ask to pair at any time; nothing is stored
+ * unless the user confirms the emojis on both phones. Owns every WebRTC object; all of them are
+ * touched only on the session's own thread. [stop] is final; create a new session to start again.
  */
 class BabySession(
     context: Context,
@@ -81,7 +86,8 @@ class BabySession(
     private val _state = MutableStateFlow(BabyState())
     val state: StateFlow<BabyState> = _state.asStateFlow()
 
-    private lateinit var eglBase: EglBase
+    /** Shared with the local preview renderer. */
+    val eglBase: EglBase = EglBase.create()
     private lateinit var audioModule: JavaAudioDeviceModule
     private lateinit var factory: PeerConnectionFactory
     private lateinit var audioSource: AudioSource
@@ -97,12 +103,13 @@ class BabySession(
     private var stopped = false
     private lateinit var ownHello: Hello
 
-    // Read by the TLS threads during handshakes.
-    @Volatile private var windowOpen = false
-    private var windowTimer: Future<*>? = null
     private var pairing: PairingRunner? = null
     private var pairingActive = false
     private var handshaking = 0
+    private val previewSinks = mutableSetOf<VideoSink>()
+
+    /** Devices whose last pairing attempt failed, until when they are ignored (elapsed ms). */
+    private val pairingBlockedUntil = mutableMapOf<String, Long>()
 
     fun start(name: String, appVersion: String) = executor.execute {
         if (stopped) return@execute
@@ -110,7 +117,8 @@ class BabySession(
         try {
             WebRtc.initialize(context)
             createMedia()
-            val s = transport.listen { windowOpen }
+            // Unknown parents may connect, but only to pair; see onPairingConnection.
+            val s = transport.listen { true }
             server = s
             advertise()
             thread(name = "baby-accept") { acceptLoop(s) }
@@ -127,29 +135,12 @@ class BabySession(
     fun stop() = executor.execute {
         if (stopped) return@execute
         stopped = true
-        windowOpen = false
-        windowTimer?.cancel(false)
         pairing?.cancel()
         advertiser.stop()
         server?.close()
         peer?.let { close(it, sendBye = true) }
         disposeMedia()
         executor.shutdown()
-    }
-
-    /** "Pair new parent": for 120 s an unknown parent may connect to pair. */
-    fun openPairingWindow() = executor.execute {
-        if (stopped || windowOpen || pairingActive) return@execute
-        windowOpen = true
-        windowTimer = executor.schedule(PAIRING_WINDOW_MS) { if (!pairingActive) closePairingWindow() }
-        _state.value = _state.value.copy(pairingWindowOpen = true, pairing = null)
-        advertise()
-    }
-
-    /** Cancel button, or the window ran out. A pairing in progress is aborted. */
-    fun cancelPairing() = executor.execute {
-        pairing?.cancel()
-        closePairingWindow()
     }
 
     /** Hides the result of the last pairing. */
@@ -162,24 +153,28 @@ class BabySession(
         peer?.let { if (it.connection.peerDeviceId !in ids) close(it, sendBye = true) }
     }
 
-    private fun closePairingWindow() {
-        windowTimer?.cancel(false)
-        windowTimer = null
-        if (!windowOpen) return
-        windowOpen = false
-        _state.value = _state.value.copy(pairingWindowOpen = false)
-        if (!stopped) advertise()
+    /** Rejects or ends a pairing in progress ("Passt nicht", back). */
+    fun cancelPairing() = executor.execute { pairing?.cancel() }
+
+    /** Front and back camera. */
+    fun switchCamera() = executor.execute { capturer?.switchCamera(null) }
+
+    /** Shows the camera picture in [sink] (the baby's own preview). Safe to call from any thread. */
+    fun attachPreview(sink: VideoSink) = executor.execute {
+        if (previewSinks.add(sink)) videoTrack?.addSink(sink)
     }
 
-    /** (Re-)registers the mDNS service, with `pair=1` while the window is open. */
+    fun detachPreview(sink: VideoSink) = executor.execute {
+        if (previewSinks.remove(sink)) videoTrack?.removeSink(sink)
+    }
+
     private fun advertise() {
         val s = server ?: return
         advertiser.stop()
-        advertiser.start(ownHello.name, identity.deviceId, s.port, pairing = windowOpen)
+        advertiser.start(ownHello.name, identity.deviceId, s.port)
     }
 
     private fun createMedia() {
-        eglBase = EglBase.create()
         audioModule = JavaAudioDeviceModule.builder(context)
             .setAudioSource(captureSource())
             // Quiet sounds must not be swallowed by processing meant for calls.
@@ -203,7 +198,7 @@ class BabySession(
         val enumerator = Camera2Enumerator(context)
         val names = enumerator.deviceNames
         val cameraName = names.firstOrNull { enumerator.isBackFacing(it) } ?: names.firstOrNull()
-        val cam = cameraName?.let { enumerator.createCapturer(it, null) }
+        val cam = cameraName?.let { enumerator.createCapturer(it, cameraEvents) }
         if (cam == null) {
             _state.value = _state.value.copy(cameraAvailable = false)
             return
@@ -215,7 +210,24 @@ class BabySession(
         capturer = cam
         textureHelper = helper
         videoSource = source
-        videoTrack = factory.createVideoTrack("video", source)
+        videoTrack = factory.createVideoTrack("video", source).also { track -> previewSinks.forEach(track::addSink) }
+        _state.value = _state.value.copy(canSwitchCamera = names.size > 1)
+    }
+
+    private val cameraEvents = object : CameraVideoCapturer.CameraEventsHandler {
+        override fun onCameraError(error: String?) = cameraFailed()
+        override fun onCameraDisconnected() = cameraFailed()
+        override fun onCameraFreezed(error: String?) = cameraFailed()
+        override fun onCameraOpening(cameraName: String?) = Unit
+        override fun onFirstFrameAvailable() {
+            _state.value = _state.value.copy(cameraError = false)
+        }
+        override fun onCameraClosed() = Unit
+
+        private fun cameraFailed() {
+            Log.w(TAG, "camera failed")
+            _state.value = _state.value.copy(cameraError = true)
+        }
     }
 
     private fun captureSource(): Int {
@@ -225,7 +237,10 @@ class BabySession(
     }
 
     private fun disposeMedia() {
-        if (!::eglBase.isInitialized) return // never started
+        if (!::audioModule.isInitialized) {
+            eglBase.release() // never started
+            return
+        }
         try {
             capturer?.stopCapture()
         } catch (e: InterruptedException) {
@@ -238,7 +253,7 @@ class BabySession(
         if (::audioTrack.isInitialized) audioTrack.dispose()
         if (::audioSource.isInitialized) audioSource.dispose()
         if (::factory.isInitialized) factory.dispose()
-        if (::audioModule.isInitialized) audioModule.release()
+        audioModule.release()
         eglBase.release()
     }
 
@@ -278,14 +293,16 @@ class BabySession(
         }
     }
 
-    private fun onPairingConnection(connection: SignalingConnection) {
-        // Only one pairing at a time, and only while the window is open.
-        if (stopped || !windowOpen || pairingActive) {
+    private fun onPairingConnection(connection: SignalingConnection, firstMessage: SignalingMessage? = null) {
+        // One pairing at a time; a device whose last attempt failed is ignored for a while, so
+        // nobody on the Wi-Fi can keep popping up the pairing screen.
+        val now = SystemClock.elapsedRealtime()
+        pairingBlockedUntil.entries.removeAll { it.value <= now }
+        if (stopped || pairingActive || connection.peerDeviceId in pairingBlockedUntil) {
             connection.close()
             return
         }
         pairingActive = true
-        windowTimer?.cancel(false)
         lateinit var runner: PairingRunner
         runner = PairingRunner(
             connection,
@@ -297,13 +314,15 @@ class BabySession(
             onFinished = {
                 executor.execute {
                     if (pairing === runner) pairingActive = false
-                    closePairingWindow()
+                    if (runner.state.value == PairingState.Failed) {
+                        pairingBlockedUntil[connection.peerDeviceId] = SystemClock.elapsedRealtime() + PAIRING_BLOCK_MS
+                    }
                 }
             },
         )
         pairing = runner
         _state.value = _state.value.copy(pairing = runner)
-        runner.start()
+        runner.start(firstMessage)
     }
 
     private fun onIncoming(connection: SignalingConnection) {
@@ -328,6 +347,20 @@ class BabySession(
         try {
             while (true) {
                 val message = p.connection.receive() ?: break
+                if (message is PairCommit) {
+                    // A parent we trust asks to pair again: it removed us on its side. Hand the
+                    // connection to the pairing exchange; the user decides again.
+                    executor.execute {
+                        if (peer === p && p.pc == null) {
+                            peer = null
+                            _state.value = _state.value.copy(parentName = null)
+                            onPairingConnection(p.connection, message)
+                        } else {
+                            p.connection.close()
+                        }
+                    }
+                    return
+                }
                 if (message is Answer) p.connection.setReadTimeout(0) // set up; may idle from now on
                 executor.execute { if (peer === p) handle(p, message) }
             }
@@ -466,7 +499,7 @@ class BabySession(
         const val HEIGHT = 720
         const val FPS = 15
         const val MAX_BITRATE_BPS = 1_500_000
-        const val PAIRING_WINDOW_MS = 120_000L
+        const val PAIRING_BLOCK_MS = 60_000L
         const val MAX_CONNECTIONS = 8
     }
 }

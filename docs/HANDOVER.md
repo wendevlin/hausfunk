@@ -25,15 +25,19 @@ Install the debug APK from the PR's CI run on both phones. Debug builds are a se
 ("Hausfunk (Debug)", red-ringed icon, ID `dev.wendelin.hausfunk.debug`) next to the release app,
 signed with a shared debug key, so later CI builds install as updates. Then:
 
-1. Baby phone: Baby → "Pair new parent". Parent phone: Parent → "Add baby device" → tap the baby.
-2. Both phones show 7 emojis with names; they must be identical. Tap "They match" on both.
-   Both say "Paired"; the baby now appears in the parent's list as online. Tap it: video.
-3. Pair again with a third phone (or after removing), tap "Don't match" on one side: neither
-   phone stores anything.
-4. A third, unpaired phone on the Wi-Fi cannot watch (it does not even see the baby as pairable
-   unless the window is open).
-5. Settings → remove the baby on the parent (or the parent on the baby) while watching: the
-   stream stops at once and does not come back.
+1. Close the release app on both phones (swipe it away from recents): it may hold the camera.
+2. Phone A: Baby. It shows its own camera picture. Phone B: Parent. A appears under "Neu in
+   diesem WLAN"; tap it. Both show 7 emojis with names; tap "Passt" on both.
+3. Tap A in B's list: video with sound. Then swap roles: no new pairing is needed.
+4. "Passt nicht" on either phone stores nothing.
+5. Settings → remove the other device while watching: the stream stops at once.
+6. Baby: "Bild aus" turns the screen black; a tap brings it back. Camera switch works.
+
+First phone test (2026-10-14, Flip 7 + Tab S9, both Android 16): pairing worked one way; the other
+way found nothing (fixed: role-independent trust); sound but black video in both directions
+(unclear; the release app was installed alongside, see step 1, and the baby preview now shows
+whether the camera delivers); locking the baby stops sound without a warning (expected until
+phases 4 and 5).
 
 ## Notes for the next agent session
 

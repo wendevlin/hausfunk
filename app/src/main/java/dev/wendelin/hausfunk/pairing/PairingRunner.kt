@@ -3,6 +3,7 @@ package dev.wendelin.hausfunk.pairing
 import android.util.Log
 import dev.wendelin.hausfunk.SerialExecutor
 import dev.wendelin.hausfunk.signaling.SignalingConnection
+import dev.wendelin.hausfunk.signaling.SignalingMessage
 import java.io.IOException
 import java.security.SecureRandom
 import java.util.concurrent.Future
@@ -55,9 +56,11 @@ class PairingRunner(
     private var timeout: Future<*>? = null
     private var ended = false
 
-    fun start() = executor.execute {
+    /** [firstMessage]: already read from the connection by someone else (a re-pair request). */
+    fun start(firstMessage: SignalingMessage? = null) = executor.execute {
         timeout = executor.schedule(TIMEOUT_MS) { apply(protocol.reject("timeout")) }
         apply(protocol.start())
+        if (firstMessage != null) apply(protocol.onMessage(firstMessage))
         thread(name = "pairing-read") { readLoop() }
     }
 

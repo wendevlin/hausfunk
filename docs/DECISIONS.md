@@ -74,16 +74,24 @@ Deviations from, or clarifications of, the implementation plan. Newest first.
   used as written.
 - **Handshakes run on their own thread** after `accept`, so a slow or hostile client cannot block
   other parents from connecting. Limit: 8 open connections including handshakes.
-- **`pair=1` is changed by registering the service again**, so every Android version sees it
-  (Android 12–13 resolve a service only once).
 - **The parent checks the baby's certificate against the announced `id`** before pairing. The
   emojis would catch a swap anyway; the check gives a clear failure instead of mismatching emojis.
 - **Emoji table taken from the npm package `@matrix-org/spec` 1.16.0** (`sas-emoji.json`, Apache
   2.0): the spec website was not reachable from the build environment. Names shown in German when
   the system language is German, otherwise English.
 - **Plain TCP transport deleted**, as the plan requires; no flag keeps it.
-- **Re-pairing needs removal on both phones.** A phone still in the other's trust store is
-  classified as paired, not as a pairing peer.
+- **Pairing without a window (owner's design after the first phone test).** Instead of "Pair new
+  parent" (120 s window, `pair=1`) and "Add baby device", the parent lists all baby devices on the
+  Wi-Fi, paired and new; tapping a new one asks the baby, which shows the emojis. Both phones
+  still have to tap "Passt": with only the baby confirming, a man in the middle could make the
+  parent trust it. Cost: anyone on the Wi-Fi can make the pairing screen appear on the baby (one
+  at a time, 60 s pause after a failed attempt); storing still needs both confirmations.
+- **Trust is role-independent.** The first test paired one way and then found nothing the other
+  way, because lists filtered on the role stored at pairing. The role is now only a label.
+- **Baby preview, camera switch and "Bild aus" pulled forward from phase 7** (owner's request):
+  the baby shows its own picture for placing the phone; "Bild aus" blacks the screen at minimum
+  brightness, any tap brings it back. Camera errors are shown on the baby, and the parent says so
+  when no picture arrives within 5 s.
 
 - **Debug builds are a separate app** (`applicationIdSuffix = ".debug"`, name "Hausfunk (Debug)",
   red ring around the icon), signed with a debug keystore committed to the repository

@@ -21,9 +21,9 @@ import javax.net.ssl.X509ExtendedTrustManager
 
 /**
  * Signaling over TLS 1.3 with mutual authentication and certificate pinning. Both sides present
- * their Keystore identity. Nothing is ever accepted without a pinned fingerprint, except a single
- * pairing connection: on the baby while its pairing window is open, on the parent when it
- * explicitly starts pairing.
+ * their Keystore identity. Nothing is ever accepted without a pinned fingerprint, except pairing
+ * connections: on the baby an unknown parent may connect only to ask for pairing, on the parent
+ * when the user taps an unpaired baby.
  */
 class TlsTransport(
     private val identity: Identity,
@@ -34,15 +34,15 @@ class TlsTransport(
 
     /**
      * Baby side. A client certificate passes the handshake if it is pinned, or while
-     * [pairingWindowOpen]; after the handshake the peer is classified again with fresh values,
-     * so a window that closed in between rejects it.
+     * [allowPairing] says yes; after the handshake the peer is classified again with fresh values.
+     * An unknown peer can only ever reach the pairing exchange, never signaling.
      */
-    fun listen(pairingWindowOpen: () -> Boolean): SignalingServer {
-        val trust = PinningTrustManager { classifyPeer(it, trustedIds(), pairingWindowOpen()) != PeerClass.REJECTED }
+    fun listen(allowPairing: () -> Boolean): SignalingServer {
+        val trust = PinningTrustManager { classifyPeer(it, trustedIds(), allowPairing()) != PeerClass.REJECTED }
         val serverSocket = context(trust).serverSocketFactory.createServerSocket(0) as SSLServerSocket
         serverSocket.enabledProtocols = PROTOCOLS
         serverSocket.needClientAuth = true
-        return Server(serverSocket, pairingWindowOpen)
+        return Server(serverSocket, allowPairing)
     }
 
     /** Parent side: connects to a paired baby; anything but [expectedDeviceId] is rejected. */
@@ -75,7 +75,7 @@ class TlsTransport(
 
     private inner class Server(
         private val serverSocket: SSLServerSocket,
-        private val pairingWindowOpen: () -> Boolean,
+        private val allowPairing: () -> Boolean,
     ) : SignalingServer {
         override val port: Int get() = serverSocket.localPort
 
@@ -83,7 +83,7 @@ class TlsTransport(
             val socket = serverSocket.accept() as SSLSocket
             return object : SignalingServer.Pending {
                 override fun handshake(): SignalingConnection = try {
-                    handshake(socket) { deviceId -> classifyPeer(deviceId, trustedIds(), pairingWindowOpen()) }
+                    handshake(socket) { deviceId -> classifyPeer(deviceId, trustedIds(), allowPairing()) }
                 } catch (e: IOException) {
                     socket.close()
                     throw e
