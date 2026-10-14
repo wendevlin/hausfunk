@@ -16,12 +16,8 @@ import java.util.Calendar
 import java.util.Date
 import java.util.GregorianCalendar
 import java.util.TimeZone
+import kotlinx.coroutines.flow.first
 import javax.security.auth.x500.X500Principal
-
-/** The device's permanent identity: a non-exportable EC P-256 key in the Android Keystore. */
-class Identity(val privateKey: PrivateKey, val certificate: X509Certificate) {
-    val deviceId: String = Fingerprint.deviceId(certificate.encoded)
-}
 
 class IdentityManager(
     private val settings: SettingsRepository,
@@ -39,9 +35,10 @@ class IdentityManager(
         if (existing != null && existing.deviceId == previousId) return existing
 
         val identity = existing ?: generate()
-        // Peers pinned the old certificate, so every pairing is void.
-        val lost = previousId != null
-        if (lost) trustStore.clear()
+        // Peers pinned the old certificate, so every pairing is void. Keys from before phase 3
+        // lack the raw-digest purpose TLS needs; with nothing paired yet, replacing one is silent.
+        val lost = previousId != null && trustStore.devices.first().isNotEmpty()
+        if (previousId != null) trustStore.clear()
         settings.setIdentity(identity.deviceId, resetNotice = lost)
         return identity
     }
@@ -55,12 +52,17 @@ class IdentityManager(
         null
     }
 
-    /** A key can exist yet be unusable after an OS update; one test signature finds out. */
+    /**
+     * A key can exist yet be unusable after an OS update; test signatures find out. Both the
+     * SHA-256 and the raw-digest form are needed: TLS uses the raw one.
+     */
     private fun canSign(key: PrivateKey): Boolean = try {
-        Signature.getInstance("SHA256withECDSA").run {
-            initSign(key)
-            update(byteArrayOf(0))
-            sign()
+        for (algorithm in listOf("SHA256withECDSA", "NONEwithECDSA")) {
+            Signature.getInstance(algorithm).run {
+                initSign(key)
+                update(ByteArray(32))
+                sign()
+            }
         }
         true
     } catch (e: GeneralSecurityException) {
@@ -73,7 +75,8 @@ class IdentityManager(
 
         val spec = KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY)
             .setAlgorithmParameterSpec(ECGenParameterSpec("secp256r1"))
-            .setDigests(KeyProperties.DIGEST_SHA256)
+            // TLS signs a digest it computed itself, so the platform asks the Keystore for NONEwithECDSA.
+            .setDigests(KeyProperties.DIGEST_SHA256, KeyProperties.DIGEST_NONE)
             .setCertificateSubject(X500Principal("CN=babyphone"))
             .setCertificateSerialNumber(BigInteger.ONE)
             .setCertificateNotBefore(Date(0))

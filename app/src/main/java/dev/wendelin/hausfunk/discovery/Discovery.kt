@@ -17,14 +17,25 @@ const val SERVICE_TYPE = "_babyphone._tcp"
 private const val TAG = "Discovery"
 
 /** A baby device seen on the LAN and resolved to an address. */
-data class FoundBaby(val deviceId: String, val name: String, val address: InetAddress, val port: Int)
+data class FoundBaby(
+    val deviceId: String,
+    val name: String,
+    val address: InetAddress,
+    val port: Int,
+    /** The baby's pairing window is open (`pair=1`). */
+    val pairable: Boolean,
+)
 
-/** Baby side: advertises the signaling port with `id` and `v` in the TXT record. */
+/**
+ * Baby side: advertises the signaling port with `id` and `v` in the TXT record, plus `pair=1`
+ * while the pairing window is open. Changing that flag registers the service again, so parents on
+ * every Android version see the change as the service going and coming back.
+ */
 class BabyAdvertiser(context: Context) {
     private val nsd = context.getSystemService(NsdManager::class.java)
     private var listener: NsdManager.RegistrationListener? = null
 
-    fun start(name: String, deviceId: String, port: Int) {
+    fun start(name: String, deviceId: String, port: Int, pairing: Boolean) {
         check(listener == null) { "already advertising" }
         val info = NsdServiceInfo().apply {
             // The service name is shown to parents; NSD appends " (2)" on a clash.
@@ -33,6 +44,7 @@ class BabyAdvertiser(context: Context) {
             this.port = port
             setAttribute("id", deviceId)
             setAttribute("v", "1")
+            if (pairing) setAttribute("pair", "1")
         }
         val l = object : NsdManager.RegistrationListener {
             override fun onRegistrationFailed(info: NsdServiceInfo, errorCode: Int) {
@@ -117,12 +129,18 @@ class BabyFinder(context: Context) {
         val version = info.attributes["v"]?.toString(Charsets.UTF_8)
         val address = info.addressesCompat().firstOrNull()
         if (id == null || version != "1" || address == null || !isDeviceId(id)) return
-        byService[info.serviceName] = FoundBaby(id, DeviceName.sanitize(info.serviceName), address, info.port)
+        val pairable = info.attributes["pair"]?.toString(Charsets.UTF_8) == "1"
+        byService[info.serviceName] = FoundBaby(id, DeviceName.sanitize(info.serviceName), address, info.port, pairable)
         publish()
     }
 
     private fun publish() {
-        _babies.value = byService.values.distinctBy { it.deviceId }.sortedBy { it.name.lowercase() }
+        // While a baby re-registers, its old and new service can both be visible; the newer
+        // announcement is the pairable one when the window just opened.
+        _babies.value = byService.values
+            .sortedByDescending { it.pairable }
+            .distinctBy { it.deviceId }
+            .sortedBy { it.name.lowercase() }
     }
 
     private fun isDeviceId(id: String) = id.length == 64 && id.all { it in '0'..'9' || it in 'a'..'f' }

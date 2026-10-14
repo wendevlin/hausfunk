@@ -17,6 +17,13 @@ class TrustStoreRepository(context: Context, scope: CoroutineScope) {
 
     val devices: Flow<List<TrustedDevice>> = store.data.map { it.devices }
 
+    /** Adds a freshly paired device. A device that is already present is left as it is. */
+    suspend fun add(device: TrustedDevice) {
+        store.updateData { trust ->
+            if (trust.devices.any { it.deviceId == device.deviceId }) trust else trust.copy(devices = trust.devices + device)
+        }
+    }
+
     suspend fun rename(deviceId: String, name: String) {
         val clean = DeviceName.sanitize(name).trim()
         if (clean.isEmpty()) return

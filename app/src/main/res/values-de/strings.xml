@@ -44,7 +44,7 @@
     <string name="baby_switch_camera">Kamera wechseln</string>
 
     <string name="parent_title">Babygeräte</string>
-    <string name="parent_empty">Noch kein Babygerät gekoppelt. Wähle auf dem anderen Handy „Baby“ und tippe dort auf „Neues Elterngerät koppeln“.</string>
+    <string name="parent_empty">Noch kein Babygerät gekoppelt. Wähle auf dem Babyhandy „Baby“ und tippe auf „Neues Elterngerät koppeln“, dann tippe hier auf „Babygerät hinzufügen“.</string>
     <string name="parent_add">Babygerät hinzufügen</string>
     <string name="parent_offline">Offline</string>
     <string name="parent_select_hint">Wähle ein Babygerät, um die Überwachung zu starten.</string>
@@ -69,8 +69,6 @@
     <string name="baby_connected_to">Verbunden mit %1$s.</string>
     <string name="baby_failed">Überwachung konnte nicht starten. Geh zurück und versuche es erneut.</string>
     <string name="baby_no_camera">Keine Kamera verfügbar, es wird nur Ton gesendet.</string>
-    <string name="test_build_warning">Testversion: Die Verbindung ist noch nicht geschützt. Alle in diesem WLAN können zusehen und zuhören. Nicht außerhalb deines Zuhauses verwenden.</string>
-    <string name="parent_nearby">In der Nähe (Testversion, nicht gekoppelt)</string>
     <string name="parent_searching">Suche Babygeräte in diesem WLAN …</string>
     <string name="parent_online">Online · zum Zusehen tippen</string>
     <string name="parent_watching">Wird angesehen</string>
@@ -78,4 +76,18 @@
     <string name="watch_connecting">Verbinde mit %1$s …</string>
     <string name="watch_busy">%1$s überträgt schon an ein anderes Elterngerät.</string>
     <string name="watch_lost">Verbindung zu %1$s verloren.</string>
+    <string name="baby_pairing_open_title">Bereit zum Koppeln</string>
+    <string name="baby_pairing_open_body">Öffne auf dem Elternhandy Hausfunk, wähle „Eltern“ und tippe auf „Babygerät hinzufügen“. Das bleibt 2 Minuten offen.</string>
+    <string name="pairing_connecting">Verbinde …</string>
+    <string name="pairing_compare_title">Vergleiche die Emojis</string>
+    <string name="pairing_compare_body">%1$s zeigt auch Emojis. Sind es dieselben, in derselben Reihenfolge?</string>
+    <string name="pairing_match">Stimmen überein</string>
+    <string name="pairing_no_match">Stimmen nicht überein</string>
+    <string name="pairing_waiting_for_peer">Warte auf die Bestätigung von %1$s …</string>
+    <string name="pairing_done_title">Gekoppelt</string>
+    <string name="pairing_done_body">%1$s ist jetzt gekoppelt. Ab jetzt verbinden sich die beiden Handys von selbst.</string>
+    <string name="pairing_failed_title">Nicht gekoppelt</string>
+    <string name="pairing_failed_body">Das Koppeln wurde nicht abgeschlossen, es wurde nichts gespeichert. Versuche es auf beiden Handys noch einmal.</string>
+    <string name="parent_add_hint">Wähle auf dem Babyhandy „Baby“ und tippe auf „Neues Elterngerät koppeln“. Es erscheint dann hier.</string>
+    <string name="parent_tap_to_pair">Zum Koppeln tippen</string>
 </resources>

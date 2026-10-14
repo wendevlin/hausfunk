@@ -1,8 +1,7 @@
 # Hausfunk wire protocol (version 1)
 
-Kept in sync with the code. Phase 2 implements discovery, framing and signaling over a
-**temporary plain TCP** connection (no TLS, no pairing); phase 3 replaces the transport with
-mutual TLS and adds pairing. The data channel exists but carries no messages yet.
+Kept in sync with the code. Implemented: discovery, mutual TLS, pairing and signaling (phase 3).
+The data channel exists but carries no messages yet (phase 5).
 
 ## Discovery
 
@@ -21,10 +20,17 @@ mutual TLS and adds pairing. The data channel exists but carries no messages yet
 
 ## Transport
 
+Implemented in `signaling/TlsTransport.kt`; trust decisions in `identity/TlsKeys.kt`.
+
 - The baby is always the TLS server and WebRTC offerer; the parent is the TLS client and answerer.
 - TLS 1.3 only, mutual authentication (`needClientAuth = true`).
 - Trust: a certificate is accepted if and only if its SHA-256 fingerprint is in the trust store.
-  Validity dates, chains and hostnames are ignored.
+  Validity dates, chains and hostnames are ignored. The parent additionally requires the
+  fingerprint to equal the device ID of the baby it meant to connect to.
+- The baby classifies each client after the handshake, with fresh values: `TRUSTED` if pinned,
+  else `PAIRING` while the pairing window is open, else the connection is closed.
+- The identity key signs TLS handshakes inside the Keystore (purposes SIGN/VERIFY, digests
+  SHA-256 and NONE; the platform hands TLS signatures to the Keystore as raw digests).
 - Limits: connect/handshake timeout 10 s, at most 8 concurrent connections on the baby, at most 1
   `PAIRING` connection.
 - Read timeout 30 s while the session is set up (until the baby has the `answer`, the parent
@@ -32,12 +38,16 @@ mutual TLS and adds pairing. The data channel exists but carries no messages yet
   `ping`/`pong` (phase 5) and the ICE state.
 - Framing: 4-byte big-endian length prefix, then UTF-8 JSON, maximum 64 KiB per frame.
   Unknown message types are ignored; malformed or oversize frames close the connection.
-- Every message is `{ "type": ..., ... }`. The sender's device ID travels in `hello`; after that
-  the connection itself identifies the peer.
+- Every message is `{ "type": ..., ... }`. The sender's device ID travels in `hello` and must equal
+  the fingerprint of the certificate the peer presented, otherwise the connection is closed.
 
 ## Pairing (commit-reveal SAS inside TLS)
 
-1. Baby opens a 120 s pairing window and advertises `pair=1`. While open, its server trust
+Messages: `pair_commit { commitment }`, `pair_reveal { nonce, deviceId, name }`, `pair_confirm`,
+`pair_abort`; commitment and nonce are base64. Implemented in `pairing/` (pure logic in
+`PairingProtocol.kt`, emoji table in `SasEmoji.kt` from `@matrix-org/spec` 1.16.0).
+
+1. Baby opens a 120 s pairing window and advertises `pair=1` (by registering the service again). While open, its server trust
    manager accepts one unknown client certificate; the connection is classified `PAIRING` and
    handled only by the pairing handler.
 2. Parent picks the advertised baby and connects with a one-connection trust manager that accepts
@@ -53,6 +63,10 @@ mutual TLS and adds pairing. The data channel exists but carries no messages yet
 9. Both users compare the emojis. "They match" → `pair_confirm`; "Don't match", back or 120 s
    timeout → `pair_abort` and close.
 10. A side stores the peer only after its own "They match" **and** the peer's `pair_confirm`.
+    The window closes when the pairing finishes or aborts. Any message out of order, a second
+    commitment or reveal, or a dropped connection aborts and stores nothing.
+11. The parent refuses a baby whose certificate does not match the `id` it announced, or that is
+    already in its trust store. Re-pairing needs the old entry removed on both phones first.
 
 ## Signaling
 
@@ -62,7 +76,7 @@ mutual TLS and adds pairing. The data channel exists but carries no messages yet
 | `offer` | baby → parent | `sdp` |
 | `answer` | parent → baby | `sdp` |
 | `ice` | both | `candidate`, `sdpMid`, `sdpMLineIndex` |
-| `busy` | baby → parent | parent limit reached (1 in phase 2, 4 from phase 6) |
+| `busy` | baby → parent | parent limit reached (1 until phase 6, then 4) |
 | `bye` | both | orderly close |
 
 - Sequence: parent connects and sends `hello`; baby answers `hello`, then `offer`; parent sends

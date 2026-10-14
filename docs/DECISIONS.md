@@ -63,6 +63,28 @@ Deviations from, or clarifications of, the implementation plan. Newest first.
   workflow can also be started by hand for an existing tag, which builds that tag and attaches
   the APK to its release.
 
+## Phase 3
+
+- **Identity key also allows `DIGEST_NONE`.** The plan said SHA-256 only, but Android's TLS stack
+  asks the Keystore to sign an already computed digest (`NONEwithECDSA`); without that purpose the
+  handshake fails. Keys from earlier builds are replaced at startup; with nothing paired yet this
+  is silent, otherwise the usual "pair again" notice appears.
+- **`X509ExtendedTrustManager`, not the plain interface.** The JDK and Conscrypt wrap plain trust
+  managers with extra checks (algorithm constraints, endpoint identification); the extended one is
+  used as written.
+- **Handshakes run on their own thread** after `accept`, so a slow or hostile client cannot block
+  other parents from connecting. Limit: 8 open connections including handshakes.
+- **`pair=1` is changed by registering the service again**, so every Android version sees it
+  (Android 12–13 resolve a service only once).
+- **The parent checks the baby's certificate against the announced `id`** before pairing. The
+  emojis would catch a swap anyway; the check gives a clear failure instead of mismatching emojis.
+- **Emoji table taken from the npm package `@matrix-org/spec` 1.16.0** (`sas-emoji.json`, Apache
+  2.0): the spec website was not reachable from the build environment. Names shown in German when
+  the system language is German, otherwise English.
+- **Plain TCP transport deleted**, as the plan requires; no flag keeps it.
+- **Re-pairing needs removal on both phones.** A phone still in the other's trust store is
+  classified as paired, not as a pairing peer.
+
 ## Open points for later phases
 
 - **F-Droid and prebuilt libwebrtc.** F-Droid builds from source and is strict about prebuilt

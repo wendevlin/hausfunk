@@ -16,7 +16,8 @@ import dev.wendelin.hausfunk.signaling.Offer
 import dev.wendelin.hausfunk.signaling.PROTOCOL_VERSION
 import dev.wendelin.hausfunk.signaling.SignalingConnection
 import dev.wendelin.hausfunk.signaling.SignalingMessage
-import dev.wendelin.hausfunk.signaling.SignalingTransport
+import dev.wendelin.hausfunk.identity.Identity
+import dev.wendelin.hausfunk.signaling.TlsTransport
 import java.io.IOException
 import kotlin.concurrent.thread
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -49,7 +50,8 @@ sealed interface ParentState {
  * the sinks attached with [attach]. All WebRTC objects are touched only on the session's own
  * thread. [release] is final.
  */
-class ParentSession(context: Context, private val transport: SignalingTransport) {
+class ParentSession(context: Context, identity: Identity, trustedIds: () -> Set<String>) {
+    private val transport = TlsTransport(identity, trustedIds)
     private val context = context.applicationContext
     private val executor = SerialExecutor("parent-session")
     private val _state = MutableStateFlow<ParentState>(ParentState.Idle)
@@ -99,6 +101,11 @@ class ParentSession(context: Context, private val transport: SignalingTransport)
         executor.shutdown()
     }
 
+    /** Call whenever the trust store changes: a removed baby is disconnected at once. */
+    fun onTrustChanged(ids: Set<String>) = executor.execute {
+        link?.let { if (it.baby.deviceId !in ids) close(it, sendBye = true, lost = false) }
+    }
+
     /** Shows the video in [sink] while connected. Safe to call from any thread. */
     fun attach(sink: VideoSink) = executor.execute {
         if (sinks.add(sink)) link?.videoTrack?.addSink(sink)
@@ -125,7 +132,7 @@ class ParentSession(context: Context, private val transport: SignalingTransport)
     /** Runs on the link's own thread: connects, then reads until the connection ends. */
     private fun run(l: Link, ownHello: Hello) {
         try {
-            val connection = transport.connect(l.baby.address, l.baby.port)
+            val connection = transport.connect(l.baby.address, l.baby.port, l.baby.deviceId)
             l.connection = connection
             executor.execute { if (link !== l) connection.close() }
             connection.send(ownHello)
@@ -152,7 +159,7 @@ class ParentSession(context: Context, private val transport: SignalingTransport)
                 _state.value = ParentState.Busy(l.baby)
             }
             Bye -> close(l, sendBye = false, lost = true)
-            is Answer -> fail(l, "unexpected answer")
+            else -> fail(l, "unexpected ${message.javaClass.simpleName}")
         }
     }
 

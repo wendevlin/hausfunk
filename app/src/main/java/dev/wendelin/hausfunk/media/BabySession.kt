@@ -17,7 +17,13 @@ import dev.wendelin.hausfunk.signaling.PROTOCOL_VERSION
 import dev.wendelin.hausfunk.signaling.SignalingConnection
 import dev.wendelin.hausfunk.signaling.SignalingMessage
 import dev.wendelin.hausfunk.signaling.SignalingServer
-import dev.wendelin.hausfunk.signaling.SignalingTransport
+import dev.wendelin.hausfunk.signaling.TlsTransport
+import dev.wendelin.hausfunk.identity.Fingerprint
+import dev.wendelin.hausfunk.identity.Identity
+import dev.wendelin.hausfunk.identity.PeerClass
+import dev.wendelin.hausfunk.pairing.PairedPeer
+import dev.wendelin.hausfunk.pairing.PairingRunner
+import java.util.concurrent.Future
 import java.io.IOException
 import kotlin.concurrent.thread
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -50,14 +56,26 @@ data class BabyState(
     /** False if the camera could not be opened; sound still works. */
     val cameraAvailable: Boolean = true,
     val failed: Boolean = false,
+    /** A parent may start pairing (for up to 120 s). */
+    val pairingWindowOpen: Boolean = false,
+    /** The pairing exchange in progress or just ended, until the user dismisses it. */
+    val pairing: PairingRunner? = null,
 )
 
 /**
- * Baby side: captures camera and microphone once and streams them to one parent (phase 2;
- * several parents arrive in phase 6). Owns every WebRTC object; all of them are touched only on
- * the session's own thread. [stop] is final; create a new session to start again.
+ * Baby side: captures camera and microphone once and streams them to one paired parent (several
+ * parents arrive in phase 6), and runs the pairing window. Owns every WebRTC object; all of them
+ * are touched only on the session's own thread. [stop] is final; create a new session to start
+ * again.
  */
-class BabySession(context: Context, private val transport: SignalingTransport) {
+class BabySession(
+    context: Context,
+    private val identity: Identity,
+    private val trustedIds: () -> Set<String>,
+    /** Stores a newly paired parent. */
+    private val onPaired: (PairedPeer) -> Unit,
+) {
+    private val transport = TlsTransport(identity, trustedIds)
     private val context = context.applicationContext
     private val executor = SerialExecutor("baby-session")
     private val _state = MutableStateFlow(BabyState())
@@ -79,15 +97,22 @@ class BabySession(context: Context, private val transport: SignalingTransport) {
     private var stopped = false
     private lateinit var ownHello: Hello
 
-    fun start(name: String, deviceId: String, appVersion: String) = executor.execute {
+    // Read by the TLS threads during handshakes.
+    @Volatile private var windowOpen = false
+    private var windowTimer: Future<*>? = null
+    private var pairing: PairingRunner? = null
+    private var pairingActive = false
+    private var handshaking = 0
+
+    fun start(name: String, appVersion: String) = executor.execute {
         if (stopped) return@execute
-        ownHello = Hello(PROTOCOL_VERSION, deviceId, name, appVersion)
+        ownHello = Hello(PROTOCOL_VERSION, identity.deviceId, name, appVersion)
         try {
             WebRtc.initialize(context)
             createMedia()
-            val s = transport.listen()
+            val s = transport.listen { windowOpen }
             server = s
-            advertiser.start(name, deviceId, s.port)
+            advertise()
             thread(name = "baby-accept") { acceptLoop(s) }
         } catch (e: IOException) {
             Log.w(TAG, "could not start", e)
@@ -102,11 +127,55 @@ class BabySession(context: Context, private val transport: SignalingTransport) {
     fun stop() = executor.execute {
         if (stopped) return@execute
         stopped = true
+        windowOpen = false
+        windowTimer?.cancel(false)
+        pairing?.cancel()
         advertiser.stop()
         server?.close()
         peer?.let { close(it, sendBye = true) }
         disposeMedia()
         executor.shutdown()
+    }
+
+    /** "Pair new parent": for 120 s an unknown parent may connect to pair. */
+    fun openPairingWindow() = executor.execute {
+        if (stopped || windowOpen || pairingActive) return@execute
+        windowOpen = true
+        windowTimer = executor.schedule(PAIRING_WINDOW_MS) { if (!pairingActive) closePairingWindow() }
+        _state.value = _state.value.copy(pairingWindowOpen = true, pairing = null)
+        advertise()
+    }
+
+    /** Cancel button, or the window ran out. A pairing in progress is aborted. */
+    fun cancelPairing() = executor.execute {
+        pairing?.cancel()
+        closePairingWindow()
+    }
+
+    /** Hides the result of the last pairing. */
+    fun dismissPairing() = executor.execute {
+        if (!pairingActive) _state.value = _state.value.copy(pairing = null)
+    }
+
+    /** Call whenever the trust store changes: a removed parent is disconnected at once. */
+    fun onTrustChanged(ids: Set<String>) = executor.execute {
+        peer?.let { if (it.connection.peerDeviceId !in ids) close(it, sendBye = true) }
+    }
+
+    private fun closePairingWindow() {
+        windowTimer?.cancel(false)
+        windowTimer = null
+        if (!windowOpen) return
+        windowOpen = false
+        _state.value = _state.value.copy(pairingWindowOpen = false)
+        if (!stopped) advertise()
+    }
+
+    /** (Re-)registers the mDNS service, with `pair=1` while the window is open. */
+    private fun advertise() {
+        val s = server ?: return
+        advertiser.stop()
+        advertiser.start(ownHello.name, identity.deviceId, s.port, pairing = windowOpen)
     }
 
     private fun createMedia() {
@@ -175,13 +244,66 @@ class BabySession(context: Context, private val transport: SignalingTransport) {
 
     private fun acceptLoop(s: SignalingServer) {
         while (true) {
-            val connection = try {
+            val pending = try {
                 s.accept()
             } catch (e: IOException) {
                 return // server closed
             }
-            executor.execute { onIncoming(connection) }
+            executor.execute { onAccepted(pending) }
         }
+    }
+
+    private fun onAccepted(pending: SignalingServer.Pending) {
+        val open = handshaking + (if (peer != null) 1 else 0) + (if (pairingActive) 1 else 0)
+        if (stopped || open >= MAX_CONNECTIONS) {
+            pending.close()
+            return
+        }
+        handshaking++
+        thread(name = "baby-handshake") {
+            val connection = try {
+                pending.handshake()
+            } catch (e: IOException) {
+                Log.i(TAG, "handshake refused: ${e.javaClass.simpleName}")
+                null
+            }
+            executor.execute {
+                handshaking--
+                when {
+                    connection == null -> Unit
+                    connection.peerClass == PeerClass.PAIRING -> onPairingConnection(connection)
+                    else -> onIncoming(connection)
+                }
+            }
+        }
+    }
+
+    private fun onPairingConnection(connection: SignalingConnection) {
+        // Only one pairing at a time, and only while the window is open.
+        if (stopped || !windowOpen || pairingActive) {
+            connection.close()
+            return
+        }
+        pairingActive = true
+        windowTimer?.cancel(false)
+        lateinit var runner: PairingRunner
+        runner = PairingRunner(
+            connection,
+            isParent = false,
+            ownDeviceId = identity.deviceId,
+            ownName = ownHello.name,
+            ownFingerprint = Fingerprint.sha256(identity.certificate.encoded),
+            onPaired = onPaired,
+            onFinished = {
+                executor.execute {
+                    if (pairing === runner) pairingActive = false
+                    closePairingWindow()
+                }
+            },
+        )
+        pairing = runner
+        _state.value = _state.value.copy(pairing = runner)
+        runner.start()
     }
 
     private fun onIncoming(connection: SignalingConnection) {
@@ -231,12 +353,15 @@ class BabySession(context: Context, private val transport: SignalingTransport) {
             }
             is Ice -> p.pc?.let { pc -> p.ice.add(pc, IceCandidate(message.sdpMid, message.sdpMLineIndex, message.candidate)) }
             Bye -> close(p, sendBye = false)
-            is Offer, Busy -> fail(p, "unexpected ${message.javaClass.simpleName}")
+            else -> fail(p, "unexpected ${message.javaClass.simpleName}")
         }
     }
 
     private fun onHello(p: Peer, hello: Hello) {
-        if (p.pc != null || hello.version != PROTOCOL_VERSION) return fail(p, "bad hello")
+        // The certificate already proved who this is; the hello must agree with it.
+        if (p.pc != null || hello.version != PROTOCOL_VERSION || hello.deviceId != p.connection.peerDeviceId) {
+            return fail(p, "bad hello")
+        }
         p.name = DeviceName.sanitize(hello.name)
         if (!send(p, ownHello)) return
         val pc = factory.createPeerConnection(WebRtc.rtcConfiguration(), observer(p)) ?: return fail(p, "no peer connection")
@@ -341,5 +466,7 @@ class BabySession(context: Context, private val transport: SignalingTransport) {
         const val HEIGHT = 720
         const val FPS = 15
         const val MAX_BITRATE_BPS = 1_500_000
+        const val PAIRING_WINDOW_MS = 120_000L
+        const val MAX_CONNECTIONS = 8
     }
 }

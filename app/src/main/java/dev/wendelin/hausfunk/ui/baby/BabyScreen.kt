@@ -43,45 +43,89 @@ import dev.wendelin.hausfunk.HausfunkApplication
 import dev.wendelin.hausfunk.R
 import dev.wendelin.hausfunk.media.BabySession
 import dev.wendelin.hausfunk.media.BabyState
-import dev.wendelin.hausfunk.signaling.PlainTcpTransport
+import dev.wendelin.hausfunk.data.Role
+import dev.wendelin.hausfunk.pairing.PairingState
+import dev.wendelin.hausfunk.ui.pairing.PairingContent
+import androidx.activity.compose.BackHandler
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.collectAsState
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import dev.wendelin.hausfunk.ui.common.PermissionHint
 import dev.wendelin.hausfunk.ui.common.appVersion
 import dev.wendelin.hausfunk.ui.common.rememberMissingPermissions
 import kotlinx.coroutines.launch
 
 /**
- * Runs the baby session while the screen is shown (phase 2; phase 4 moves it into a foreground
- * service) and only once every needed permission is granted.
+ * Runs the baby session while the screen is shown (phase 4 moves it into a foreground service)
+ * and only once every needed permission is granted. A pairing in progress takes over the screen.
  */
 @Composable
 fun BabyRoute(app: HausfunkApplication, deviceName: String, onStop: () -> Unit, onOpenSettings: () -> Unit) {
     val missing = rememberMissingPermissions(baby = true)
     var state by remember { mutableStateOf(BabyState()) }
+    var session by remember { mutableStateOf<BabySession?>(null) }
     if (missing.isEmpty()) {
         val context = LocalContext.current
         val view = LocalView.current
         DisposableEffect(Unit) {
-            val session = BabySession(context, PlainTcpTransport())
             val job = app.appScope.launch {
-                session.start(deviceName, app.identity.await().deviceId, appVersion(context))
-                session.state.collect { state = it }
+                val identity = app.identity.await()
+                app.trustedIds.filterNotNull().first() // pinning needs the stored pairings
+                val s = BabySession(context, identity, app::currentTrustedIds) { app.storePaired(it, Role.PARENT) }
+                try {
+                    session = s
+                    s.start(deviceName, appVersion(context))
+                    launch { app.trustedIds.filterNotNull().collect { s.onTrustChanged(it) } }
+                    s.state.collect { state = it }
+                } finally {
+                    s.stop()
+                }
             }
             // TEMPORARY until phase 4: the session lives in the activity, so the screen stays on.
             view.keepScreenOn = true
             onDispose {
                 view.keepScreenOn = false
                 job.cancel()
-                session.stop()
+                session = null
                 state = BabyState()
             }
         }
     }
-    BabyScreen(state, missing, onStop, onOpenSettings)
+    val pairing = state.pairing
+    if (pairing != null) {
+        val pairingState by pairing.state.collectAsState()
+        BackHandler { if (pairingState is PairingState.Comparing || pairingState == PairingState.Connecting) session?.cancelPairing() else session?.dismissPairing() }
+        Surface(Modifier.fillMaxSize()) {
+            PairingContent(
+                pairingState,
+                onConfirm = pairing::confirm,
+                onReject = { session?.cancelPairing() },
+                onClose = { session?.dismissPairing() },
+            )
+        }
+        return
+    }
+    BabyScreen(
+        state,
+        missing,
+        onStop,
+        onOpenSettings,
+        onPair = { session?.openPairingWindow() },
+        onCancelPairing = { session?.cancelPairing() },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BabyScreen(state: BabyState, missing: List<String>, onStop: () -> Unit, onOpenSettings: () -> Unit) {
+fun BabyScreen(
+    state: BabyState,
+    missing: List<String>,
+    onStop: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onPair: () -> Unit,
+    onCancelPairing: () -> Unit,
+) {
     var menuOpen by remember { mutableStateOf(false) }
     Scaffold(
         topBar = {
@@ -136,6 +180,16 @@ fun BabyScreen(state: BabyState, missing: List<String>, onStop: () -> Unit, onOp
                         PermissionHint(missing)
                         return@Column
                     }
+                    if (state.pairingWindowOpen) {
+                        Text(stringResource(R.string.baby_pairing_open_title), style = MaterialTheme.typography.headlineLarge)
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            stringResource(R.string.baby_pairing_open_body),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        return@Column
+                    }
                     val parent = state.parentName
                     Text(
                         stringResource(if (parent != null) R.string.baby_streaming else R.string.baby_waiting),
@@ -159,12 +213,6 @@ fun BabyScreen(state: BabyState, missing: List<String>, onStop: () -> Unit, onOp
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    Spacer(Modifier.height(24.dp))
-                    Text(
-                        stringResource(R.string.test_build_warning),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error,
-                    )
                 }
                 Row(
                     Modifier
@@ -172,7 +220,13 @@ fun BabyScreen(state: BabyState, missing: List<String>, onStop: () -> Unit, onOp
                         .padding(top = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                 ) {
-                    OutlinedButton(onClick = {}, enabled = false) { Text(stringResource(R.string.baby_pair)) }
+                    if (state.pairingWindowOpen) {
+                        OutlinedButton(onClick = onCancelPairing) { Text(stringResource(R.string.action_cancel)) }
+                    } else {
+                        OutlinedButton(onClick = onPair, enabled = missing.isEmpty() && !state.failed) {
+                            Text(stringResource(R.string.baby_pair))
+                        }
+                    }
                     Button(onClick = onStop) { Text(stringResource(R.string.baby_stop)) }
                 }
             }
