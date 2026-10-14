@@ -4,9 +4,8 @@ Deviations from, or clarifications of, the implementation plan. Newest first.
 
 ## Phase 1
 
-- **applicationId `io.github.wendevlin.hausfunk`.** Reverse-domain under the GitHub Pages domain
-  of the repository owner, independent of the product name. Permanent once the first release is
-  tagged; change it before then if a different domain is preferred.
+- **applicationId `dev.wendelin.hausfunk`.** Reverse-domain ID chosen by the owner, independent
+  of the product name. Permanent once the first release is tagged.
 - **`dataExtractionRules` in addition to `allowBackup="false"`.** From Android 12,
   `allowBackup="false"` does not stop device-to-device transfer. The rules exclude every domain
   from both cloud backup and device transfer, so identity references, trust store and settings

@@ -10,12 +10,12 @@ plugins {
 val releaseKeystore: String? = System.getenv("HAUSFUNK_KEYSTORE_FILE")
 
 android {
-    namespace = "io.github.wendevlin.hausfunk"
+    namespace = "dev.wendelin.hausfunk"
     compileSdk = 36
 
     defaultConfig {
         // Permanent: changing it breaks updates of installed copies.
-        applicationId = "io.github.wendevlin.hausfunk"
+        applicationId = "dev.wendelin.hausfunk"
         minSdk = 31
         targetSdk = 36
         // Bump both for every release; CI checks that the tag equals "v$versionName".
