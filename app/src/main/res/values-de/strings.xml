@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="action_continue">Weiter</string>
+    <string name="action_back">Zurück</string>
+    <string name="action_cancel">Abbrechen</string>
+    <string name="action_save">Speichern</string>
+    <string name="action_ok">OK</string>
+    <string name="action_allow">Erlauben</string>
+    <string name="action_not_now">Nicht jetzt</string>
+    <string name="action_rename">Umbenennen</string>
+    <string name="action_remove">Entfernen</string>
+    <string name="action_settings">Einstellungen</string>
+    <string name="action_more">Weitere Optionen</string>
+
+    <string name="onboarding_step">Schritt %1$d von %2$d</string>
+    <string name="onboarding_name_title">Gerät benennen</string>
+    <string name="onboarding_name_body">Deine anderen Geräte zeigen diesen Namen an, zum Beispiel „Kinderzimmer“ oder „Wendelins Pixel“.</string>
+    <string name="device_name_label">Gerätename</string>
+    <string name="device_name_counter">%1$d/%2$d</string>
+    <string name="onboarding_camera_title">Kamera</string>
+    <string name="onboarding_camera_body">Wenn dieses Gerät das Babygerät ist, siehst du dein Kind über die Kamera. Das Bild wird nur über dein WLAN zu Hause übertragen und nie aufgezeichnet.</string>
+    <string name="onboarding_microphone_title">Mikrofon</string>
+    <string name="onboarding_microphone_body">Wenn dieses Gerät das Babygerät ist, hörst du dein Kind über das Mikrofon. Der Ton wird nur über dein WLAN zu Hause übertragen und nie aufgezeichnet.</string>
+    <string name="onboarding_notifications_title">Benachrichtigungen</string>
+    <string name="onboarding_notifications_body">Benachrichtigungen zeigen, dass die Überwachung läuft, und alarmieren dich, wenn die Verbindung zum Babygerät abbricht.</string>
+    <string name="onboarding_battery_title">Im Hintergrund laufen</string>
+    <string name="onboarding_battery_body">Manche Handys beenden Apps im Hintergrund, um Akku zu sparen. Erlaube Hausfunk, weiterzulaufen, damit die Überwachung nie unbemerkt endet.</string>
+    <string name="onboarding_later_hint">Du kannst das später in den Systemeinstellungen ändern.</string>
+
+    <string name="role_title">Dieses Gerät verwenden als</string>
+    <string name="role_baby">Baby</string>
+    <string name="role_baby_description">Bleibt bei deinem Kind und sendet Bild und Ton.</string>
+    <string name="role_parent">Eltern</string>
+    <string name="role_parent_description">Bleibt bei dir und zeigt das Babygerät.</string>
+    <string name="role_last_used">Zuletzt verwendet</string>
+
+    <string name="identity_reset_title">Geräte neu koppeln</string>
+    <string name="identity_reset_body">Der Sicherheitsschlüssel dieses Geräts ist verloren gegangen, zum Beispiel nach einem Systemupdate. Zu deiner Sicherheit wurden alle gekoppelten Geräte entfernt. Kopple sie neu, um fortzufahren.</string>
+
+    <string name="baby_waiting">Warte auf Eltern</string>
+    <string name="baby_no_parents">Kein Elterngerät verbunden.</string>
+    <string name="baby_pair">Neues Elterngerät koppeln</string>
+    <string name="baby_stop">Beenden</string>
+    <string name="baby_switch_camera">Kamera wechseln</string>
+
+    <string name="parent_title">Babygeräte</string>
+    <string name="parent_empty">Noch kein Babygerät gekoppelt. Wähle auf dem anderen Handy „Baby“ und tippe dort auf „Neues Elterngerät koppeln“.</string>
+    <string name="parent_add">Babygerät hinzufügen</string>
+    <string name="parent_offline">Offline</string>
+    <string name="parent_select_hint">Wähle ein Babygerät, um die Überwachung zu starten.</string>
+
+    <string name="settings_title">Einstellungen</string>
+    <string name="settings_this_device">Dieses Gerät</string>
+    <string name="settings_device_id">Geräte-ID</string>
+    <string name="settings_paired_devices">Gekoppelte Geräte</string>
+    <string name="settings_paired_empty">Noch keine gekoppelten Geräte.</string>
+    <string name="settings_paired_baby">Baby · gekoppelt am %1$s</string>
+    <string name="settings_paired_parent">Eltern · gekoppelt am %1$s</string>
+    <string name="settings_rename_title">Gerät umbenennen</string>
+    <string name="settings_remove_title">%1$s entfernen?</string>
+    <string name="settings_remove_body">%1$s kann sich dann nicht mehr verbinden. Um es wieder zu verwenden, kopple es neu.</string>
+</resources>
