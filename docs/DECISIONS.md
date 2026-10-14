@@ -23,8 +23,8 @@ Deviations from, or clarifications of, the implementation plan. Newest first.
   the plan allows the extended set for this case.
 - **Settings and trust store writes use the application scope**, not the UI scope, so a write is
   never cancelled by navigation or the activity going away.
-- **Version numbers are literals in `app/build.gradle.kts`.** CI checks that a `v*` tag equals
-  `v$versionName`. Literal values are what F-Droid's update checker reads.
+- **Version numbers are literals in `app/build.gradle.kts`.** CI checks that a release tag equals
+  `versionName`. Literal values are what F-Droid's update checker reads.
 - **`dependenciesInfo` disabled.** F-Droid rejects the encrypted dependency metadata block.
 - **compileSdk and targetSdk 37.** API 37 is the latest stable platform, and Navigation 2.10,
   Compose 1.12 and core 1.19 refuse to build against 36.
@@ -58,6 +58,10 @@ Deviations from, or clarifications of, the implementation plan. Newest first.
   activity, so a screen timeout would stop it. Removed in phase 4 with the foreground service.
 - **`SerialExecutor` drops tasks after shutdown.** Socket readers and NSD callbacks can deliver
   events after a session ended; throwing on their threads would crash the app.
+
+- **Release tags are the bare version (`0.1.0`, no `v`).** The owner's preference. The Build
+  workflow can also be started by hand for an existing tag, which builds that tag and attaches
+  the APK to its release.
 
 ## Open points for later phases
 

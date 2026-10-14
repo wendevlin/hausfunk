@@ -9,7 +9,7 @@ any reference to them in `README.md`) once the project is done, i.e. after phase
 ## Where we are
 
 - **Phase 1 is merged** (`main`): skeleton, onboarding, role picker, settings, identity, CI, logo.
-  The owner checked it on two phones. The signed-release test (`v0.1.0` → `v0.1.1`) was
+  The owner checked it on two phones. The signed-release test (`0.1.0` → `0.1.1`) was
   deferred by the owner to the end of phase 2.
 - **Phase 2 is merged and passed its gate** on two Android 16 phones (2026-10-14): discovery,
   video with sound, rotation, stopping. Found there: portrait video was cropped, because
@@ -20,7 +20,7 @@ any reference to them in `README.md`) once the project is done, i.e. after phase
 
 ## Next steps
 
-1. Owner adds the four `HAUSFUNK_*` signing secrets; then tag `v0.1.0` and `v0.1.1` for the
+1. Owner adds the four `HAUSFUNK_*` signing secrets; then tag `0.1.0` and `0.1.1` for the
    deferred release/update test (uninstall the debug build first).
 2. Phase 3: pairing, trust store, mutual TLS; delete `PlainTcpTransport`.
 

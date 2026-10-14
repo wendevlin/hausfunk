@@ -17,7 +17,7 @@ android {
         applicationId = "dev.wendelin.hausfunk"
         minSdk = 31
         targetSdk = 37
-        // Bump both for every release; CI checks that the tag equals "v$versionName".
+        // Bump both for every release; CI checks that the release tag equals versionName.
         versionCode = 1
         versionName = "0.1.0"
         // Phones only: x86 and x86_64 would add ~29 MB of libwebrtc for emulators and Chromebooks.
