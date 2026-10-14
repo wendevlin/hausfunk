@@ -19,10 +19,11 @@ The debug APK lands in `app/build/outputs/apk/debug/`. Install it with
 
 ## Releases
 
-Create a tag `vX.Y.Z` that equals `versionName` in `app/build.gradle.kts` (bump `versionCode` too),
-either with `git tag vX.Y.Z && git push origin vX.Y.Z` or on GitHub's "Draft a new release" page
+Create a tag `X.Y.Z` (no `v`) that equals `versionName` in `app/build.gradle.kts` (bump `versionCode`
+too), either with `git tag X.Y.Z && git push origin X.Y.Z` or on GitHub's "Draft a new release" page
 (new tag on `main`, then "Publish release"). CI builds a signed release APK and attaches it to the
-GitHub release. The signing key lives in
+GitHub release. For a tag whose build did not run, start the "Build" workflow by hand (Actions →
+Build → Run workflow) with that tag. The signing key lives in
 these repository secrets, never in the repository:
 
 | Secret | Content |
