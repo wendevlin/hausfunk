@@ -36,15 +36,52 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import dev.wendelin.hausfunk.HausfunkApplication
 import dev.wendelin.hausfunk.R
+import dev.wendelin.hausfunk.media.BabySession
+import dev.wendelin.hausfunk.media.BabyState
+import dev.wendelin.hausfunk.signaling.PlainTcpTransport
+import dev.wendelin.hausfunk.ui.common.PermissionHint
+import dev.wendelin.hausfunk.ui.common.appVersion
+import dev.wendelin.hausfunk.ui.common.rememberMissingPermissions
+import kotlinx.coroutines.launch
 
 /**
- * Phase 1: layout only. Connected parents, pairing and the camera switch arrive with the
- * streaming and pairing phases.
+ * Runs the baby session while the screen is shown (phase 2; phase 4 moves it into a foreground
+ * service) and only once every needed permission is granted.
  */
+@Composable
+fun BabyRoute(app: HausfunkApplication, deviceName: String, onStop: () -> Unit, onOpenSettings: () -> Unit) {
+    val missing = rememberMissingPermissions(baby = true)
+    var state by remember { mutableStateOf(BabyState()) }
+    if (missing.isEmpty()) {
+        val context = LocalContext.current
+        val view = LocalView.current
+        DisposableEffect(Unit) {
+            val session = BabySession(context, PlainTcpTransport())
+            val job = app.appScope.launch {
+                session.start(deviceName, app.identity.await().deviceId, appVersion(context))
+                session.state.collect { state = it }
+            }
+            // TEMPORARY until phase 4: the session lives in the activity, so the screen stays on.
+            view.keepScreenOn = true
+            onDispose {
+                view.keepScreenOn = false
+                job.cancel()
+                session.stop()
+                state = BabyState()
+            }
+        }
+    }
+    BabyScreen(state, missing, onStop, onOpenSettings)
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BabyScreen(onStop: () -> Unit, onOpenSettings: () -> Unit) {
+fun BabyScreen(state: BabyState, missing: List<String>, onStop: () -> Unit, onOpenSettings: () -> Unit) {
     var menuOpen by remember { mutableStateOf(false) }
     Scaffold(
         topBar = {
@@ -95,12 +132,38 @@ fun BabyScreen(onStop: () -> Unit, onOpenSettings: () -> Unit) {
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.Center,
                 ) {
-                    Text(stringResource(R.string.baby_waiting), style = MaterialTheme.typography.headlineLarge)
+                    if (missing.isNotEmpty()) {
+                        PermissionHint(missing)
+                        return@Column
+                    }
+                    val parent = state.parentName
+                    Text(
+                        stringResource(if (parent != null) R.string.baby_streaming else R.string.baby_waiting),
+                        style = MaterialTheme.typography.headlineLarge,
+                    )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        stringResource(R.string.baby_no_parents),
+                        when {
+                            state.failed -> stringResource(R.string.baby_failed)
+                            parent != null -> stringResource(R.string.baby_connected_to, parent)
+                            else -> stringResource(R.string.baby_no_parents)
+                        },
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (!state.cameraAvailable) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            stringResource(R.string.baby_no_camera),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Spacer(Modifier.height(24.dp))
+                    Text(
+                        stringResource(R.string.test_build_warning),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
                     )
                 }
                 Row(

@@ -15,9 +15,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import dev.wendelin.hausfunk.HausfunkApplication
 import dev.wendelin.hausfunk.data.Role
-import dev.wendelin.hausfunk.ui.baby.BabyScreen
+import dev.wendelin.hausfunk.ui.baby.BabyRoute
 import dev.wendelin.hausfunk.ui.onboarding.OnboardingScreen
-import dev.wendelin.hausfunk.ui.parent.ParentHomeScreen
+import dev.wendelin.hausfunk.ui.parent.ParentRoute
 import dev.wendelin.hausfunk.ui.role.RolePickerScreen
 import dev.wendelin.hausfunk.ui.settings.SettingsScreen
 import kotlinx.coroutines.launch
@@ -73,14 +73,18 @@ fun HausfunkNavHost(app: HausfunkApplication, windowSizeClass: WindowSizeClass) 
             )
         }
         composable(Routes.BABY) {
-            BabyScreen(
+            BabyRoute(
+                app = app,
+                deviceName = loaded.deviceName,
                 onStop = { navController.popBackStack(Routes.ROLE, inclusive = false) },
                 onOpenSettings = openSettings,
             )
         }
         composable(Routes.PARENT) {
-            ParentHomeScreen(
-                babies = trusted.filter { it.role == Role.BABY },
+            ParentRoute(
+                app = app,
+                deviceName = loaded.deviceName,
+                trusted = trusted,
                 windowSizeClass = windowSizeClass,
                 onBack = { navController.popBackStack() },
                 onOpenSettings = openSettings,

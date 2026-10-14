@@ -59,4 +59,23 @@
     <string name="settings_rename_title">Gerät umbenennen</string>
     <string name="settings_remove_title">%1$s entfernen?</string>
     <string name="settings_remove_body">%1$s kann sich dann nicht mehr verbinden. Um es wieder zu verwenden, kopple es neu.</string>
+
+    <string name="onboarding_local_network_title">Lokales Netzwerk</string>
+    <string name="onboarding_local_network_body">Damit sich deine Geräte in deinem WLAN zu Hause finden. Bild und Ton gehen direkt von Handy zu Handy und verlassen nie dein Heimnetz.</string>
+    <string name="permissions_missing">Hausfunk braucht in dieser Rolle Zugriff auf Kamera, Mikrofon und lokales Netzwerk. Erlaube die fehlenden Berechtigungen, um fortzufahren.</string>
+    <string name="action_open_settings">Einstellungen öffnen</string>
+    <string name="action_retry">Erneut versuchen</string>
+    <string name="baby_streaming">Überträgt</string>
+    <string name="baby_connected_to">Verbunden mit %1$s.</string>
+    <string name="baby_failed">Überwachung konnte nicht starten. Geh zurück und versuche es erneut.</string>
+    <string name="baby_no_camera">Keine Kamera verfügbar, es wird nur Ton gesendet.</string>
+    <string name="test_build_warning">Testversion: Die Verbindung ist noch nicht geschützt. Alle in diesem WLAN können zusehen und zuhören. Nicht außerhalb deines Zuhauses verwenden.</string>
+    <string name="parent_nearby">In der Nähe (Testversion, nicht gekoppelt)</string>
+    <string name="parent_searching">Suche Babygeräte in diesem WLAN …</string>
+    <string name="parent_online">Online · zum Zusehen tippen</string>
+    <string name="parent_watching">Wird angesehen</string>
+    <string name="watch_stop">Zusehen beenden</string>
+    <string name="watch_connecting">Verbinde mit %1$s …</string>
+    <string name="watch_busy">%1$s überträgt schon an ein anderes Elterngerät.</string>
+    <string name="watch_lost">Verbindung zu %1$s verloren.</string>
 </resources>

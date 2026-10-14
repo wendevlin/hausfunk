@@ -61,4 +61,23 @@
     <string name="settings_rename_title">Rename device</string>
     <string name="settings_remove_title">Remove %1$s?</string>
     <string name="settings_remove_body">%1$s will no longer be able to connect. To use it again, pair it again.</string>
+
+    <string name="onboarding_local_network_title">Local network</string>
+    <string name="onboarding_local_network_body">Lets your devices find each other on your home Wi-Fi. Picture and sound go directly from phone to phone and never leave your home network.</string>
+    <string name="permissions_missing">Hausfunk needs camera, microphone and local network access to work in this role. Allow the missing permissions to continue.</string>
+    <string name="action_open_settings">Open settings</string>
+    <string name="action_retry">Try again</string>
+    <string name="baby_streaming">Streaming</string>
+    <string name="baby_connected_to">Connected to %1$s.</string>
+    <string name="baby_failed">Could not start monitoring. Go back and try again.</string>
+    <string name="baby_no_camera">No camera available, sending sound only.</string>
+    <string name="test_build_warning">Test build: the connection is not protected yet. Anyone on this Wi-Fi can watch and listen. Do not use outside your home.</string>
+    <string name="parent_nearby">Nearby (test build, not paired)</string>
+    <string name="parent_searching">Searching for baby devices on this Wi-Fi…</string>
+    <string name="parent_online">Online · tap to watch</string>
+    <string name="parent_watching">Watching</string>
+    <string name="watch_stop">Stop watching</string>
+    <string name="watch_connecting">Connecting to %1$s…</string>
+    <string name="watch_busy">%1$s is already streaming to another parent device.</string>
+    <string name="watch_lost">Connection to %1$s lost.</string>
 </resources>
