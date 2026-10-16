@@ -195,6 +195,10 @@ Deviations from, or clarifications of, the implementation plan. Newest first.
   remote track's volume, which did not mute in the owner's test. A crossed-out speaker next to "Last
   sound" shows while it is muted.
 
+- **Zooming in first uses the black bars**, then crops (owner's request): the view grows to the
+  shown part's aspect ratio until it fills the screen. Pure region and pinch maths in
+  `ui/common/ZoomRegion.kt` with unit tests; up to 6× the fitted size.
+
 ## Open points for later phases
 
 - **F-Droid and prebuilt libwebrtc.** F-Droid builds from source and is strict about prebuilt

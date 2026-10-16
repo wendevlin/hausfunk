@@ -344,6 +344,7 @@ Seven phases, each ending in an installable APK that the user tests on two real 
 6. **Multiple parents and video gating**: `watching` messages, per-sender `active` flag, camera stops when nobody watches, parent limit with `busy`, connected-parents list on the baby screen.
    - Done when: three parents connect at once, only those in foreground or PiP receive video, and the baby phone stays below the thermal `SEVERE` state for one hour.
 7. **Polish**: app size (see "App size"), thermal fallback, sound history (R15), alarm settings, camera switch, German strings reviewed, README with install and limitations, edge cases from testing.
+   - Galaxy Flip (foldables, owner's request): Flex mode when half folded (`androidx.window` `FoldingFeature`): parent shows the video on the upper half and level, last sound and controls on the lower half; baby stands half folded with the camera on the upright half and its screen off or a small status below the fold. Check the layouts on the Flip's cover screen (small, nearly square window) for both roles. Test on the Flip 7.
 
 Do not hand the APK to anyone outside the household before phase 3 is done: until then, anyone on the Wi-Fi can watch.
 
