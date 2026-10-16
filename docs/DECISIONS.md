@@ -154,6 +154,27 @@ Deviations from, or clarifications of, the implementation plan. Newest first.
 - **Android 12–13**: while reconnecting, discovery is restarted every 30 s, since those versions
   report no address changes. A new default network triggers an immediate reconnect attempt.
 
+## Phase 4 and 5 test feedback
+
+- **4 emojis instead of 7, in one row (owner's request).** 24 bits instead of 42. The
+  commit-reveal exchange leaves an attacker in the middle one guess per attempt, so the chance is
+  1 in 16.7 million per attempt, and a failed attempt blocks that device for 60 s. For
+  comparison, Bluetooth numeric comparison uses 6 digits (about 20 bits) with the same kind of
+  commitments.
+- **Bundled emoji images.** A Samsung and a Pixel drew the same emojis so differently that they
+  looked like a mismatch. The 64 SAS emojis ship as small images from
+  Google's Noto emoji (Apache 2.0, rendered from the SVGs in `@iconify-json/noto` 1.2.9), so
+  every phone shows identical pictures. About 350 KB.
+- **One discovery for the whole app.** The parent screens and the parent service now share one
+  `BabyFinder` (reference counted). With two discoveries, stopping the service's one could make
+  the baby disappear from the list until the screen was reopened (test: after "X" the baby could
+  not be tapped again).
+- **"No picture yet" follows the session**, which watches for frames on every connection; the
+  renderer's first-frame event fired only once, so the hint stayed up after a reconnect.
+- **Role picker: two list entries in a fixed order** (Baby, then Parent) instead of two big cards
+  with the last role first and filled with colour. The last role gets a border and a "Last used"
+  label. `material3-window-size-class` is no longer used.
+
 ## Open points for later phases
 
 - **F-Droid and prebuilt libwebrtc.** F-Droid builds from source and is strict about prebuilt

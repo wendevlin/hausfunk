@@ -88,14 +88,13 @@ fun WatchScreen(
             .fillMaxSize()
             .background(WatchColors.background),
     ) {
-        // Whether a picture arrived on this connection; reset for every new connection.
-        var gotFrame by remember { mutableStateOf(false) }
+        // The session knows whether frames arrive on the current connection, also after a reconnect.
+        val videoArriving by session.videoArriving.collectAsState()
         var noFrameYet by remember { mutableStateOf(false) }
         val connected = state is ParentState.Connected
-        LaunchedEffect(connected) { if (!connected) gotFrame = false }
-        LaunchedEffect(connected, gotFrame) {
+        LaunchedEffect(connected, videoArriving) {
             noFrameYet = false
-            if (connected && !gotFrame) {
+            if (connected && !videoArriving) {
                 delay(NO_FRAME_HINT_MS)
                 noFrameYet = true
             }
@@ -106,7 +105,6 @@ fun WatchScreen(
                 session::attach,
                 session::detach,
                 Modifier.fillMaxSize(),
-                onFirstFrame = { gotFrame = true },
                 onAspectRatio = onAspectRatio,
                 onBounds = onVideoBounds,
             )
@@ -174,7 +172,7 @@ fun WatchScreen(
                 is ParentState.Busy -> stringResource(R.string.watch_busy, state.baby.name) + "\n" +
                     stringResource(R.string.watch_busy_retrying)
                 is ParentState.Reconnecting -> stringResource(R.string.watch_reconnecting, state.baby.name)
-                is ParentState.Connected -> if (noFrameYet && !gotFrame) stringResource(R.string.watch_no_picture) else null
+                is ParentState.Connected -> if (noFrameYet && !videoArriving) stringResource(R.string.watch_no_picture) else null
                 ParentState.Idle -> null
             }
             if (message != null) {

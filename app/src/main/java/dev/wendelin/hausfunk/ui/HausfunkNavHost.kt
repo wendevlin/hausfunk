@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -31,7 +30,7 @@ private object Routes {
 }
 
 @Composable
-fun HausfunkNavHost(app: HausfunkApplication, windowSizeClass: WindowSizeClass) {
+fun HausfunkNavHost(app: HausfunkApplication) {
     val settings by app.settings.settings.collectAsState(initial = null)
     val trusted by app.trustStore.devices.collectAsState(initial = emptyList())
 
@@ -71,7 +70,6 @@ fun HausfunkNavHost(app: HausfunkApplication, windowSizeClass: WindowSizeClass) 
             RolePickerScreen(
                 lastRole = loaded.lastRole,
                 showIdentityResetNotice = loaded.identityResetNotice,
-                windowSizeClass = windowSizeClass,
                 onRoleChosen = { role ->
                     app.appScope.launch { app.settings.setLastRole(role) }
                     navController.navigate(if (role == Role.BABY) Routes.BABY else Routes.PARENT)

@@ -60,8 +60,11 @@ Messages: `pair_commit { commitment }`, `pair_reveal { nonce, deviceId, name }`,
 6. Parent, only after receiving the baby's commitment → `pair_reveal { nonce: base64(nP), deviceId, name }`.
 7. Baby verifies the commitment and `deviceId == hex(fpP)`, else `pair_abort` and close; then
    → `pair_reveal { nonce: base64(nB), deviceId, name }`. Parent verifies the same way.
-8. `sas = SHA-256("babyphone-sas-v1" || nP || nB || fpP || fpB)`; the first 42 bits, big-endian,
-   split into 7 × 6 bits, index the 64-emoji table of the Matrix SAS verification.
+8. `sas = SHA-256("babyphone-sas-v1" || nP || nB || fpP || fpB)`; the first 24 bits, big-endian,
+   split into 4 × 6 bits, index the 64-emoji table of the Matrix SAS verification. The app shows
+   bundled Noto emoji images, not the system font, so every phone shows the same pictures. 24 bits
+   suffice because of the commitments: an attacker in the middle gets one guess per attempt
+   (1 in 16.7 million) and a failed attempt blocks the device for 60 s.
 9. Both users compare the emojis. "They match" → `pair_confirm`; "Don't match", back or 120 s
    timeout → `pair_abort` and close.
 10. A side stores the peer only after its own "They match" **and** the peer's `pair_confirm`.

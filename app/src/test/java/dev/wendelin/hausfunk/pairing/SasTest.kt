@@ -15,18 +15,18 @@ class SasTest {
 
     @Test
     fun fixedVectors() {
-        assertEquals(listOf(14, 38, 53, 42, 40, 44, 8), Sas.emojiIndices(parentNonce, babyNonce, parentFp, babyFp))
+        assertEquals(listOf(14, 38, 53, 42), Sas.emojiIndices(parentNonce, babyNonce, parentFp, babyFp))
         assertEquals(
-            listOf(4, 26, 53, 4, 51, 21, 45),
+            listOf(4, 26, 53, 4),
             Sas.emojiIndices(ByteArray(32), ByteArray(32), ByteArray(32), ByteArray(32) { -1 }),
         )
         val names = Sas.emojiIndices(parentNonce, babyNonce, parentFp, babyFp).map { SasEmojis.all[it].english }
-        assertEquals(listOf("Butterfly", "Hourglass", "Aeroplane", "Book", "Gift", "Paperclip", "Panda"), names)
+        assertEquals(listOf("Butterfly", "Hourglass", "Aeroplane", "Book"), names)
     }
 
     @Test
     fun swappingFingerprintsChangesTheEmojis() {
-        assertEquals(listOf(44, 63, 31, 4, 21, 61, 7), Sas.emojiIndices(parentNonce, babyNonce, babyFp, parentFp))
+        assertEquals(listOf(44, 63, 31, 4), Sas.emojiIndices(parentNonce, babyNonce, babyFp, parentFp))
     }
 
     @Test

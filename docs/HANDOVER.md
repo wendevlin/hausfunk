@@ -11,8 +11,9 @@ any reference to them in `README.md`) once the project is done, i.e. after phase
 - **Phases 1 to 3 are merged and passed their gates** on a Galaxy Z Flip 7 and a Galaxy Tab S9
   (Android 16): pairing with emojis both ways, mutual TLS, video and sound. Release path works
   (`0.1.0` → `0.1.1`, bare version tags). Debug builds are a separate app ("Hausfunk (Debug)").
-- **Phases 4 and 5 are written and build, not yet run on a phone** (both in one PR; the owner
-  tests them together). Phase 4: `BabyService` and `ParentService` own the sessions, wake and
+- **Phases 4 and 5 were tested by the owner on a Samsung and a Pixel: they work.** Feedback
+  fixed in the same PR (see DECISIONS, "Phase 4 and 5 test feedback"): 4 bundled emoji images in
+  one row, one shared discovery, the "no picture yet" hint after reconnects, a calmer role picker. Phase 4: `BabyService` and `ParentService` own the sessions, wake and
   Wi-Fi locks, "Stop" notification, picture-in-picture, single-pane parent screens, better video,
   media-volume warning. Phase 5: data channel with ping/pong, automatic reconnection with
   backoff, connection-loss alarm with "Acknowledge", alarm-volume warning, baby battery, live

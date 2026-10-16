@@ -3,6 +3,7 @@ package dev.wendelin.hausfunk
 import android.app.Application
 import dev.wendelin.hausfunk.data.SettingsRepository
 import dev.wendelin.hausfunk.data.TrustStoreRepository
+import dev.wendelin.hausfunk.discovery.BabyFinder
 import dev.wendelin.hausfunk.identity.Identity
 import dev.wendelin.hausfunk.identity.IdentityManager
 import kotlinx.coroutines.CoroutineScope
@@ -39,6 +40,9 @@ class HausfunkApplication : Application() {
 
     /** The running baby session, owned by BabyService; null while not monitoring as baby. */
     val babySession = MutableStateFlow<BabySession?>(null)
+
+    /** Finds baby devices on the Wi-Fi; shared by the parent screens and ParentService. */
+    val babyFinder by lazy { BabyFinder(this) }
 
     /** The running parent session, owned by ParentService; null while not watching. */
     val parentSession = MutableStateFlow<ParentSession?>(null)

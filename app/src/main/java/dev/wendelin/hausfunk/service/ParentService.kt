@@ -15,7 +15,6 @@ import dev.wendelin.hausfunk.HausfunkApplication
 import dev.wendelin.hausfunk.R
 import dev.wendelin.hausfunk.alarm.ConnectionAlarm
 import dev.wendelin.hausfunk.compat.nsdReportsAddressChanges
-import dev.wendelin.hausfunk.discovery.BabyFinder
 import dev.wendelin.hausfunk.discovery.FoundBaby
 import dev.wendelin.hausfunk.media.AlarmState
 import dev.wendelin.hausfunk.media.BabyStatus
@@ -56,7 +55,8 @@ class ParentService : Service() {
     private val watched = MutableStateFlow<FoundBaby?>(null)
     private val locks by lazy { Locks(this, "parent") }
     private val alarm by lazy { ConnectionAlarm(this) }
-    private val finder by lazy { BabyFinder(this) }
+    private val finder get() = app.babyFinder
+    private var finding = false
     private val notifications by lazy { getSystemService(NotificationManager::class.java) }
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
@@ -110,6 +110,7 @@ class ParentService : Service() {
         session = s
         app.parentSession.value = s
         finder.start()
+        finding = true
         registerNetworkCallback(s)
         val sc = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         scope = sc
@@ -195,7 +196,6 @@ class ParentService : Service() {
 
     override fun onDestroy() {
         stopMonitoring()
-        finder.release()
         super.onDestroy()
     }
 
@@ -204,7 +204,8 @@ class ParentService : Service() {
         scope = null
         networkCallback?.let { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(it) }
         networkCallback = null
-        finder.stop()
+        if (finding) finder.stop()
+        finding = false
         alarm.stop()
         session?.release()
         session = null

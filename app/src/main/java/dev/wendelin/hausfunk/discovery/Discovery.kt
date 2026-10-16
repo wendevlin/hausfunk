@@ -64,7 +64,10 @@ class BabyAdvertiser(context: Context) {
 
 /**
  * Parent side: discovers `_babyphone._tcp` services and resolves each one, because the TXT
- * attributes (the device ID) are only available after a resolve. All state lives on its own thread.
+ * attributes (the device ID) are only available after a resolve. One instance per app, shared by
+ * the parent screens and the parent service: two discoveries in one app disturbed each other.
+ * Discovery runs while at least one user has called [start] without [stop]. All state lives on
+ * its own thread.
  */
 class BabyFinder(context: Context) {
     private val executor = SerialExecutor("discovery")
@@ -74,9 +77,28 @@ class BabyFinder(context: Context) {
     private val _babies = MutableStateFlow<List<FoundBaby>>(emptyList())
     val babies: StateFlow<List<FoundBaby>> = _babies.asStateFlow()
     private var listener: NsdManager.DiscoveryListener? = null
+    private var users = 0
 
     fun start() = executor.execute {
-        if (listener != null) return@execute
+        users++
+        if (users == 1) startDiscovery()
+    }
+
+    fun stop() = executor.execute {
+        if (users == 0) return@execute
+        users--
+        if (users == 0) stopDiscovery()
+    }
+
+    /** Starts over, so every service is resolved again (for phones that report no changes). */
+    fun refresh() = executor.execute {
+        if (users == 0) return@execute
+        stopDiscovery()
+        startDiscovery()
+    }
+
+    private fun startDiscovery() {
+        if (listener != null) return
         val l = object : NsdManager.DiscoveryListener {
             override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
                 Log.w(TAG, "discovery failed: $errorCode")
@@ -97,8 +119,8 @@ class BabyFinder(context: Context) {
         nsd.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, l)
     }
 
-    fun stop() = executor.execute {
-        val l = listener ?: return@execute
+    private fun stopDiscovery() {
+        val l = listener ?: return
         listener = null
         try {
             nsd.stopServiceDiscovery(l)
@@ -108,18 +130,6 @@ class BabyFinder(context: Context) {
         resolver.stopAll()
         byService.clear()
         publish()
-    }
-
-    /** Starts over, so every service is resolved again (for phones that report no changes). */
-    fun refresh() {
-        stop()
-        start()
-    }
-
-    /** Stops discovery for good. */
-    fun release() {
-        stop()
-        executor.shutdown()
     }
 
     private fun onResolved(info: NsdServiceInfo) {

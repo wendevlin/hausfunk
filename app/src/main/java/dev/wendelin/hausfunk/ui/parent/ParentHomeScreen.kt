@@ -50,7 +50,6 @@ import dev.wendelin.hausfunk.HausfunkApplication
 import dev.wendelin.hausfunk.R
 import dev.wendelin.hausfunk.data.Role
 import dev.wendelin.hausfunk.data.TrustedDevice
-import dev.wendelin.hausfunk.discovery.BabyFinder
 import dev.wendelin.hausfunk.discovery.FoundBaby
 import dev.wendelin.hausfunk.identity.Identity
 import dev.wendelin.hausfunk.media.ParentState
@@ -80,8 +79,7 @@ fun ParentRoute(
     val context = LocalContext.current
     val missing = rememberMissingPermissions(baby = false)
     val identity by produceState<Identity?>(null) { value = app.identity.await() }
-    val finder = remember { BabyFinder(context) }
-    DisposableEffect(Unit) { onDispose { finder.release() } }
+    val finder = app.babyFinder
     if (missing.isEmpty()) {
         DisposableEffect(Unit) {
             finder.start()

@@ -126,6 +126,10 @@ class ParentSession(
 
     /** Elapsed time of the last sound above the threshold; null if none since watching began. */
     val lastSound: StateFlow<Long?> = _lastSound.asStateFlow()
+    private val _videoArriving = MutableStateFlow(false)
+
+    /** Video frames arrive on the current connection; false again after every loss. */
+    val videoArriving: StateFlow<Boolean> = _videoArriving.asStateFlow()
 
     /** Shared with the renderers so they can draw frames decoded here. */
     val eglBase: EglBase = EglBase.create()
@@ -142,7 +146,7 @@ class ParentSession(
 
     private var audioModule: JavaAudioDeviceModule? = null
     private var factory: PeerConnectionFactory? = null
-    private var link: Link? = null
+    @Volatile private var link: Link? = null
     private val sinks = mutableSetOf<VideoSink>()
     private var released = false
 
@@ -349,6 +353,7 @@ class ParentSession(
             when (val track = transceiver.receiver.track()) {
                 is VideoTrack -> {
                     l.videoTrack = track
+                    track.addSink(l.frameWatch)
                     sinks.forEach(track::addSink)
                 }
                 is AudioTrack -> {
@@ -518,7 +523,11 @@ class ParentSession(
             }
         }
         connection?.close()
-        l.videoTrack?.let { track -> sinks.forEach(track::removeSink) }
+        l.videoTrack?.let { track ->
+            track.removeSink(l.frameWatch)
+            sinks.forEach(track::removeSink)
+        }
+        _videoArriving.value = false
         l.videoTrack = null
         l.audioTrack = null
         l.control?.unregisterObserver()
@@ -559,7 +568,10 @@ class ParentSession(
         }
     }
 
-    private class Link(@Volatile var baby: FoundBaby) {
+    private inner class Link(@Volatile var baby: FoundBaby) {
+        /** Notes the first frame of this connection; runs on the decoder thread. */
+        val frameWatch = VideoSink { if (link === this && !_videoArriving.value) _videoArriving.value = true }
+
         @Volatile var connection: SignalingConnection? = null
         var pc: PeerConnection? = null
         var videoTrack: VideoTrack? = null
