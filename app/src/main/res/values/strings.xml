@@ -125,4 +125,7 @@
     <string name="settings_parent">Parent device</string>
     <string name="settings_alarm_grace">Alarm after connection loss</string>
     <string name="settings_alarm_grace_value">After %1$d s</string>
+    <string name="unpaired_title">Pairing removed</string>
+    <string name="unpaired_body">%1$s removed the pairing with this device, so it was removed here too. To use the two together again, pair them again.</string>
+    <string name="watch_gate_closed">Sound muted below the threshold</string>
 </resources>

@@ -5,6 +5,8 @@ import dev.wendelin.hausfunk.identity.Fingerprint
 import dev.wendelin.hausfunk.identity.Identity
 import dev.wendelin.hausfunk.signaling.TlsTransport
 import java.io.IOException
+import java.net.InetAddress
+import java.net.Socket
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,6 +24,8 @@ class ParentPairing(
     private val identity: Identity,
     private val ownName: String,
     private val trustedIds: () -> Set<String>,
+    /** Pins the socket to the local network (see LanNetworks). */
+    private val bind: (Socket, InetAddress) -> Unit,
     private val onPaired: (PairedPeer) -> Unit,
 ) {
     private val transport = TlsTransport(identity, trustedIds)
@@ -35,7 +39,7 @@ class ParentPairing(
     fun start(baby: FoundBaby, scope: CoroutineScope) {
         scope.launch(Dispatchers.IO) {
             val connection = try {
-                transport.connectForPairing(baby.address, baby.port)
+                transport.connectForPairing(baby.address, baby.port) { bind(it, baby.address) }
             } catch (e: IOException) {
                 _state.value = PairingState.Failed
                 return@launch

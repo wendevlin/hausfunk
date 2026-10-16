@@ -12,7 +12,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.VolumeOff
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
@@ -85,7 +89,14 @@ fun lastSoundText(lastSound: Long?): String {
 
 /** Level bar, last sound and the baby's battery, under the video. */
 @Composable
-fun SoundStatus(level: Float?, thresholdDbfs: Float, lastSound: Long?, status: BabyStatus?, modifier: Modifier = Modifier) {
+fun SoundStatus(
+    level: Float?,
+    thresholdDbfs: Float,
+    lastSound: Long?,
+    status: BabyStatus?,
+    muted: Boolean,
+    modifier: Modifier = Modifier,
+) {
     Column(modifier) {
         LevelBar(level, thresholdDbfs, Modifier.fillMaxWidth().height(4.dp))
         Row(
@@ -95,7 +106,20 @@ fun SoundStatus(level: Float?, thresholdDbfs: Float, lastSound: Long?, status: B
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(lastSoundText(lastSound), color = WatchColors.onBackground, style = MaterialTheme.typography.bodySmall)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (muted) {
+                    // The gate is closed: quiet sounds are not played.
+                    Icon(
+                        Icons.AutoMirrored.Outlined.VolumeOff,
+                        contentDescription = stringResource(R.string.watch_gate_closed),
+                        tint = WatchColors.onBackground,
+                        modifier = Modifier
+                            .padding(end = 6.dp)
+                            .size(16.dp),
+                    )
+                }
+                Text(lastSoundText(lastSound), color = WatchColors.onBackground, style = MaterialTheme.typography.bodySmall)
+            }
             if (status != null && status.battery >= 0) {
                 val low = status.battery < 20 && !status.charging
                 Text(

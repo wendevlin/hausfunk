@@ -14,6 +14,9 @@ import dev.wendelin.hausfunk.signaling.MessageCodec
 import dev.wendelin.hausfunk.signaling.Ping
 import dev.wendelin.hausfunk.signaling.Pong
 import dev.wendelin.hausfunk.signaling.Status
+import dev.wendelin.hausfunk.signaling.Unpair
+import java.net.InetAddress
+import java.net.Socket
 import java.nio.ByteBuffer
 import java.util.concurrent.Future
 import dev.wendelin.hausfunk.SerialExecutor
@@ -34,7 +37,6 @@ import kotlin.concurrent.thread
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import org.webrtc.AudioTrack
 import org.webrtc.DataChannel
 import org.webrtc.DefaultVideoDecoderFactory
 import org.webrtc.DefaultVideoEncoderFactory
@@ -99,6 +101,10 @@ class ParentSession(
     trustedIds: () -> Set<String>,
     /** The current address of a baby from discovery, if it has one. Called from any thread. */
     private val resolve: (deviceId: String) -> FoundBaby?,
+    /** Pins a signaling socket to the local network that reaches the address. */
+    private val bind: (Socket, InetAddress) -> Unit,
+    /** The baby said it no longer trusts us (it removed the pairing). Watching has ended. */
+    private val onUnpaired: (FoundBaby) -> Unit,
 ) {
     private val transport = TlsTransport(identity, trustedIds)
     private val context = context.applicationContext
@@ -130,6 +136,13 @@ class ParentSession(
 
     /** Video frames arrive on the current connection; false again after every loss. */
     val videoArriving: StateFlow<Boolean> = _videoArriving.asStateFlow()
+    private val _gateOpen = MutableStateFlow(true)
+
+    /** False while the noise gate mutes the sound (only with "only above threshold" on). */
+    val gateOpen: StateFlow<Boolean> = _gateOpen.asStateFlow()
+
+    /** The networks changed since the factory was made; rebuilt before the next attempt. */
+    private var networkChanged = false
 
     /** Shared with the renderers so they can draw frames decoded here. */
     val eglBase: EglBase = EglBase.create()
@@ -175,6 +188,7 @@ class ParentSession(
         lostSince = null
         backoff.reset()
         detector.reset()
+        applyGate()
         _lastSound.value = null
         _status.value = null
         _alarm.value = AlarmState.OFF
@@ -202,6 +216,22 @@ class ParentSession(
         attempt()
     }
 
+    /**
+     * A Wi-Fi or Ethernet network appeared or went. libwebrtc may hold on to the old network
+     * list, so the next attempt starts with a fresh factory; if the link is down, it starts now.
+     */
+    fun onNetworkChanged() = executor.execute {
+        networkChanged = true
+        if (target == null) return@execute
+        backoff.reset()
+        val l = link
+        when {
+            l == null -> attempt()
+            // An attempt still being set up may hang on the old network: start over (in 1 s).
+            !l.alive -> close(l, sendBye = false)
+        }
+    }
+
     /** Silences the alarm until the link is back and lost again. */
     fun acknowledgeAlarm() = executor.execute {
         if (_alarm.value == AlarmState.RINGING) _alarm.value = AlarmState.ACKNOWLEDGED
@@ -213,12 +243,21 @@ class ParentSession(
         detector.thresholdDbfs = prefs.thresholdDbfs
         detector.gateEnabled = prefs.gate
         detector.holdMs = prefs.holdSeconds * 1_000L
-        link?.let(::applyGate)
+        applyGate()
     }
 
-    /** Call whenever the trust store changes: a removed baby is disconnected at once. */
+    /** Call whenever the trust store changes: a removed baby is told so and disconnected at once. */
     fun onTrustChanged(ids: Set<String>) = executor.execute {
-        target?.let { if (it.deviceId !in ids) stopWatching() }
+        val t = target ?: return@execute
+        if (t.deviceId in ids) return@execute
+        link?.let { l ->
+            try {
+                l.connection?.send(Unpair)
+            } catch (e: IOException) {
+                // It learns on its next connection instead.
+            }
+        }
+        stopWatching()
     }
 
     /** Shows the video in [sink] while connected. Safe to call from any thread. */
@@ -236,6 +275,8 @@ class ParentSession(
         if (target != null) audioManager.abandonAudioFocusRequest(focusRequest)
         target = null
         _alarm.value = AlarmState.OFF
+        _gateOpen.value = true
+        audioModule?.setSpeakerMute(false)
         _state.value = ParentState.Idle
     }
 
@@ -251,6 +292,7 @@ class ParentSession(
         val module = JavaAudioDeviceModule.builder(context)
             .setAudioAttributes(mediaAttributes)
             .createAudioDeviceModule()
+        module.setSpeakerMute(!_gateOpen.value)
         audioModule = module
         PeerConnectionFactory.builder()
             .setAudioDeviceModule(module)
@@ -265,6 +307,13 @@ class ParentSession(
         val t = target ?: return
         retry?.cancel(false)
         retry = null
+        if (networkChanged) {
+            networkChanged = false
+            factory?.dispose()
+            factory = null
+            audioModule?.release()
+            audioModule = null
+        }
         val l = Link(t)
         link = l
         // The link counts as up only once pongs arrive; a setup that hangs anywhere is a failure.
@@ -296,13 +345,16 @@ class ParentSession(
         val found = resolve(last.deviceId)?.takeIf { it.address != last.address || it.port != last.port }
         if (found != null) {
             try {
-                return transport.connect(last.address, last.port, last.deviceId, FAST_CONNECT_TIMEOUT_MS)
+                return transport.connect(last.address, last.port, last.deviceId, FAST_CONNECT_TIMEOUT_MS) {
+                    bind(it, last.address)
+                }
             } catch (e: IOException) {
                 Log.i(TAG, "last address failed, trying the resolved one")
             }
             l.baby = found.copy(name = last.name)
         }
-        return transport.connect(l.baby.address, l.baby.port, l.baby.deviceId)
+        val b = l.baby
+        return transport.connect(b.address, b.port, b.deviceId) { bind(it, b.address) }
     }
 
     private fun handle(l: Link, message: SignalingMessage) {
@@ -314,6 +366,12 @@ class ParentSession(
             is Ice -> l.pc?.let { pc -> l.ice.add(pc, IceCandidate(message.sdpMid, message.sdpMLineIndex, message.candidate)) }
             Busy -> close(l, sendBye = false, busy = true)
             Bye -> close(l, sendBye = false)
+            Unpair -> {
+                // Authentic: it came over the connection pinned to this baby's certificate.
+                val baby = l.baby
+                stopWatching()
+                onUnpaired(baby)
+            }
             else -> fail(l, "unexpected ${message.javaClass.simpleName}")
         }
     }
@@ -355,10 +413,6 @@ class ParentSession(
                     l.videoTrack = track
                     track.addSink(l.frameWatch)
                     sinks.forEach(track::addSink)
-                }
-                is AudioTrack -> {
-                    l.audioTrack = track
-                    applyGate(l, force = true)
                 }
                 else -> Unit
             }
@@ -426,7 +480,7 @@ class ParentSession(
                     _level.value = db
                     detector.onLevel(db, now)
                     _lastSound.value = detector.lastSoundAt
-                    applyGate(l)
+                    applyGate()
                 }
                 else -> Unit
             }
@@ -460,12 +514,15 @@ class ParentSession(
         channel.send(DataChannel.Buffer(ByteBuffer.wrap(bytes), false))
     }
 
-    /** Mutes playback below the threshold when the gate is on; re-checked with every level. */
-    private fun applyGate(l: Link, force: Boolean = false) {
+    /**
+     * Mutes playback below the threshold when the gate is on; re-checked with every level. Mutes
+     * the audio output itself, which is certain to be silent, rather than the remote track.
+     */
+    private fun applyGate() {
         val open = detector.gateOpen(SystemClock.elapsedRealtime())
-        if (open == l.gateOpen && !force) return
-        l.gateOpen = open
-        l.audioTrack?.setVolume(if (open) 1.0 else 0.0)
+        if (open == _gateOpen.value) return
+        _gateOpen.value = open
+        audioModule?.setSpeakerMute(!open)
     }
 
     private fun pollStats(l: Link) {
@@ -529,7 +586,6 @@ class ParentSession(
         }
         _videoArriving.value = false
         l.videoTrack = null
-        l.audioTrack = null
         l.control?.unregisterObserver()
         l.control?.dispose()
         l.control = null
@@ -575,7 +631,6 @@ class ParentSession(
         @Volatile var connection: SignalingConnection? = null
         var pc: PeerConnection? = null
         var videoTrack: VideoTrack? = null
-        var audioTrack: AudioTrack? = null
         var control: DataChannel? = null
         val ice = PendingIce()
         var pinging = false
@@ -583,7 +638,6 @@ class ParentSession(
 
         /** Pongs arrive: the baby answers end to end. */
         var alive = false
-        var gateOpen = true
         var loggedMalformed = false
     }
 

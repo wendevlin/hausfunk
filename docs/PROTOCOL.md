@@ -86,6 +86,13 @@ Messages: `pair_commit { commitment }`, `pair_reveal { nonce, deviceId, name }`,
 | `ice` | both | `candidate`, `sdpMid`, `sdpMLineIndex` |
 | `busy` | baby → parent | parent limit reached (1 until phase 6, then 4) |
 | `bye` | both | orderly close |
+| `unpair` | both | "I removed the pairing with you"; then the connection closes |
+
+`unpair` is sent when a user removes a paired device while it is connected, and by a baby that
+receives `hello` on a connection it classified `PAIRING` (a parent that still trusts a baby which
+removed it). The receiver removes the sender from its trust store and tells its user once. It is
+trusted only on a connection pinned to the sender's certificate (the parent's side) or from a
+peer whose certificate the receiver trusts (the baby's side).
 
 - Sequence: parent connects and sends `hello`; baby answers `hello`, then `offer`; parent sends
   `answer`; both send `ice` as candidates appear. Candidates that arrive before the remote

@@ -6,8 +6,6 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.net.ConnectivityManager
-import android.net.Network
 import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
@@ -58,7 +56,6 @@ class ParentService : Service() {
     private val finder get() = app.babyFinder
     private var finding = false
     private val notifications by lazy { getSystemService(NotificationManager::class.java) }
-    private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -104,19 +101,26 @@ class ParentService : Service() {
     }
 
     private fun createSession(identity: dev.wendelin.hausfunk.identity.Identity): ParentSession {
-        val s = ParentSession(this, identity, app::currentTrustedIds) { id ->
-            finder.babies.value.firstOrNull { it.deviceId == id }
-        }
+        val s = ParentSession(
+            this,
+            identity,
+            app::currentTrustedIds,
+            resolve = { id -> finder.babies.value.firstOrNull { it.deviceId == id } },
+            bind = app.lanNetworks::bind,
+            onUnpaired = { baby -> app.forgetUnpaired(baby.deviceId, baby.name) },
+        )
         session = s
         app.parentSession.value = s
         finder.start()
         finding = true
-        registerNetworkCallback(s)
         val sc = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         scope = sc
         sc.launch {
             // A baby removed in the settings is disconnected and monitoring ends.
-            app.trustedIds.filterNotNull().collect { ids -> if (watched.value?.deviceId !in ids) stopMonitoring() }
+            app.trustedIds.filterNotNull().collect { ids ->
+                s.onTrustChanged(ids) // tells the baby, if it was removed here
+                if (watched.value?.deviceId !in ids) stopMonitoring()
+            }
         }
         sc.launch {
             combine(app.settings.settings, watched) { settings, baby -> settings to baby }.collect { (settings, baby) ->
@@ -182,15 +186,6 @@ class ParentService : Service() {
         }
     }
 
-    private fun registerNetworkCallback(s: ParentSession) {
-        val callback = object : ConnectivityManager.NetworkCallback() {
-            // A (new) Wi-Fi: try at once instead of waiting for the backoff.
-            override fun onAvailable(network: Network) = s.retryNow()
-        }
-        getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(callback)
-        networkCallback = callback
-    }
-
     /** Swiping the app away keeps monitoring; only "Stop" ends it. */
     override fun onTaskRemoved(rootIntent: Intent?) = Unit
 
@@ -202,8 +197,6 @@ class ParentService : Service() {
     private fun stopMonitoring() {
         scope?.cancel()
         scope = null
-        networkCallback?.let { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(it) }
-        networkCallback = null
         if (finding) finder.stop()
         finding = false
         alarm.stop()

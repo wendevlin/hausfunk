@@ -58,6 +58,7 @@ import dev.wendelin.hausfunk.service.ParentService
 import dev.wendelin.hausfunk.ui.common.AutoPictureInPicture
 import dev.wendelin.hausfunk.ui.common.PermissionHint
 import dev.wendelin.hausfunk.ui.common.VideoView
+import dev.wendelin.hausfunk.ui.common.Zoom
 import dev.wendelin.hausfunk.ui.common.rememberInPictureInPicture
 import dev.wendelin.hausfunk.ui.common.rememberMissingPermissions
 import dev.wendelin.hausfunk.ui.pairing.PairingContent
@@ -104,7 +105,7 @@ fun ParentRoute(
     fun stopWatching() = ParentService.stop(context)
     fun pair(baby: FoundBaby) {
         val id = identity ?: return
-        val p = ParentPairing(id, deviceName, app::currentTrustedIds) { app.storePaired(it, Role.BABY) }
+        val p = ParentPairing(id, deviceName, app::currentTrustedIds, app.lanNetworks::bind) { app.storePaired(it, Role.BABY) }
         pairing = p
         p.start(baby, app.appScope)
     }
@@ -127,12 +128,21 @@ fun ParentRoute(
     if (s != null && watchedId != null) {
         var aspectRatio by remember { mutableFloatStateOf(16f / 9f) }
         var videoBounds by remember { mutableStateOf<Rect?>(null) }
+        // Shared by the watch screen and picture-in-picture, so the zoom stays when the app is left.
+        var zoom by remember(watchedId) { mutableStateOf(Zoom.NONE) }
         val inPip = rememberInPictureInPicture()
         AutoPictureInPicture(enabled = state is ParentState.Connected, aspectRatio = aspectRatio, sourceRect = videoBounds)
         if (inPip) {
             // Picture-in-picture: the video and nothing else.
             Box(Modifier.fillMaxSize().background(WatchColors.background)) {
-                VideoView(s.eglBase, s::attach, s::detach, Modifier.fillMaxSize(), onAspectRatio = { aspectRatio = it })
+                VideoView(
+                    s.eglBase,
+                    s::attach,
+                    s::detach,
+                    Modifier.fillMaxSize(),
+                    onAspectRatio = { aspectRatio = it },
+                    zoom = zoom,
+                )
                 // Plus the last sound, and a red dot while the connection is down.
                 val lastSound by s.lastSound.collectAsState()
                 Row(
@@ -163,6 +173,8 @@ fun ParentRoute(
             state,
             soundPrefs = settings?.soundFor(watchedId) ?: SoundPrefs(),
             onSoundPrefs = { prefs -> app.appScope.launch { app.settings.setSound(watchedId, prefs) } },
+            zoom = zoom,
+            onZoom = { zoom = it },
             onClose = ::stopWatching,
             onAspectRatio = { aspectRatio = it },
             onVideoBounds = { videoBounds = it },

@@ -175,6 +175,26 @@ Deviations from, or clarifications of, the implementation plan. Newest first.
   with the last role first and filled with colour. The last role gets a border and a "Last used"
   label. `material3-window-size-class` is no longer used.
 
+## Second round of test feedback
+
+- **Pinch to zoom on the watch screen**, drag to move, double tap to reset; up to 4×. The frames
+  are cropped before the renderer (a SurfaceView ignores Compose transforms), so picture-in-picture
+  keeps the same zoom.
+- **The screen stays on while the watch screen is open**, with light status bar icons on its dark
+  background. Not in picture-in-picture: then the user has left the app on purpose.
+- **Removing a pairing tells the other device** (`unpair`, see PROTOCOL.md); it forgets the pairing
+  too and shows a notice once. If the other device was not connected, it learns on its next
+  connection. (Parent removed offline: the baby keeps its entry, which is harmless; the parent sees
+  the baby as new and can pair again.)
+- **Signaling sockets are bound to the Wi-Fi or Ethernet network** that reaches the baby, instead of
+  the default network, which can be mobile data right after rejoining the Wi-Fi. When such a network
+  appears or goes, discovery starts over, a hanging attempt is dropped and the next attempt uses a
+  fresh `PeerConnectionFactory` (test: after leaving and rejoining the Wi-Fi the parent only
+  reconnected after leaving the app).
+- **The noise gate mutes the audio output** (`JavaAudioDeviceModule.setSpeakerMute`) instead of the
+  remote track's volume, which did not mute in the owner's test. A crossed-out speaker next to "Last
+  sound" shows while it is muted.
+
 ## Open points for later phases
 
 - **F-Droid and prebuilt libwebrtc.** F-Droid builds from source and is strict about prebuilt

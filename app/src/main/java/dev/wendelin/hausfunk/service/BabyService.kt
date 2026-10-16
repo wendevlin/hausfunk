@@ -52,7 +52,13 @@ class BabyService : Service() {
             val identity = app.identity.await()
             app.trustedIds.filterNotNull().first() // pinning needs the stored pairings
             val name = app.settings.current().deviceName
-            val s = BabySession(this@BabyService, identity, app::currentTrustedIds) { app.storePaired(it, Role.PARENT) }
+            val s = BabySession(
+                this@BabyService,
+                identity,
+                app::currentTrustedIds,
+                onPaired = { app.storePaired(it, Role.PARENT) },
+                onUnpaired = app::forgetUnpaired,
+            )
             session = s
             app.babySession.value = s
             s.start(name, appVersion(this@BabyService))

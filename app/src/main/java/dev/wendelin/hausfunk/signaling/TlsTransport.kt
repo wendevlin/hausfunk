@@ -47,24 +47,26 @@ class TlsTransport(
 
     /**
      * Parent side: connects to a paired baby; anything but [expectedDeviceId] is rejected.
-     * [connectTimeoutMs] limits only the TCP connect, so a stale address fails fast.
+     * [connectTimeoutMs] limits only the TCP connect, so a stale address fails fast. [bind] may
+     * pin the socket to a network before it connects.
      */
     fun connect(
         address: InetAddress,
         port: Int,
         expectedDeviceId: String,
         connectTimeoutMs: Int = HANDSHAKE_TIMEOUT_MS,
+        bind: (Socket) -> Unit = {},
     ): SignalingConnection {
         val trust = PinningTrustManager { it == expectedDeviceId && it in trustedIds() }
-        return connect(address, port, trust, PeerClass.TRUSTED, connectTimeoutMs)
+        return connect(address, port, trust, PeerClass.TRUSTED, connectTimeoutMs, bind)
     }
 
     /**
      * Parent side, pairing only: accepts whatever certificate the baby presents. The emoji
      * comparison is what authenticates it; this context serves this one connection.
      */
-    fun connectForPairing(address: InetAddress, port: Int): SignalingConnection =
-        connect(address, port, PinningTrustManager { true }, PeerClass.PAIRING, HANDSHAKE_TIMEOUT_MS)
+    fun connectForPairing(address: InetAddress, port: Int, bind: (Socket) -> Unit = {}): SignalingConnection =
+        connect(address, port, PinningTrustManager { true }, PeerClass.PAIRING, HANDSHAKE_TIMEOUT_MS, bind)
 
     private fun connect(
         address: InetAddress,
@@ -72,9 +74,11 @@ class TlsTransport(
         trust: X509ExtendedTrustManager,
         peerClass: PeerClass,
         connectTimeoutMs: Int,
+        bind: (Socket) -> Unit,
     ): SignalingConnection {
         val socket = context(trust).socketFactory.createSocket() as SSLSocket
         try {
+            bind(socket)
             socket.enabledProtocols = PROTOCOLS
             socket.connect(InetSocketAddress(address, port), connectTimeoutMs)
             return handshake(socket, peerClass)

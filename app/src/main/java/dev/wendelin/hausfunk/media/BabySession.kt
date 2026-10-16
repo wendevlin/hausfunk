@@ -33,6 +33,7 @@ import dev.wendelin.hausfunk.signaling.PairCommit
 import dev.wendelin.hausfunk.signaling.Ping
 import dev.wendelin.hausfunk.signaling.Pong
 import dev.wendelin.hausfunk.signaling.Status
+import dev.wendelin.hausfunk.signaling.Unpair
 import dev.wendelin.hausfunk.signaling.Watching
 import java.nio.ByteBuffer
 import org.webrtc.VideoSink
@@ -90,6 +91,8 @@ class BabySession(
     private val trustedIds: () -> Set<String>,
     /** Stores a newly paired parent. */
     private val onPaired: (PairedPeer) -> Unit,
+    /** A parent said it removed the pairing on its side. */
+    private val onUnpaired: (deviceId: String, name: String) -> Unit,
 ) {
     private val transport = TlsTransport(identity, trustedIds)
     private val context = context.applicationContext
@@ -166,9 +169,17 @@ class BabySession(
         if (!pairingActive) _state.value = _state.value.copy(pairing = null)
     }
 
-    /** Call whenever the trust store changes: a removed parent is disconnected at once. */
+    /** Call whenever the trust store changes: a removed parent is told so and disconnected at once. */
     fun onTrustChanged(ids: Set<String>) = executor.execute {
-        peer?.let { if (it.connection.peerDeviceId !in ids) close(it, sendBye = true) }
+        peer?.let {
+            if (it.connection.peerDeviceId in ids) return@let
+            try {
+                it.connection.send(Unpair)
+            } catch (e: IOException) {
+                // It learns on its next connection instead.
+            }
+            close(it, sendBye = false)
+        }
     }
 
     /** Rejects or ends a pairing in progress ("Passt nicht", back). */
@@ -305,15 +316,41 @@ class BabySession(
                 Log.i(TAG, "handshake refused: ${e.javaClass.simpleName}")
                 null
             }
+            if (connection?.peerClass == PeerClass.PAIRING) {
+                // Still on this thread: see what the unknown device wants first.
+                val first = firstPairingMessage(connection)
+                executor.execute {
+                    handshaking--
+                    if (first is PairCommit) onPairingConnection(connection, first) else connection.close()
+                }
+                return@thread
+            }
             executor.execute {
                 handshaking--
-                when {
-                    connection == null -> Unit
-                    connection.peerClass == PeerClass.PAIRING -> onPairingConnection(connection)
-                    else -> onIncoming(connection)
-                }
+                if (connection != null) onIncoming(connection)
             }
         }
+    }
+
+    /**
+     * The first message of a device we do not trust. A parent that still thinks we are paired
+     * (we removed it) sends `hello`: it gets `unpair`, so it can tell its user. Null for anything
+     * else that is not a pairing request.
+     */
+    private fun firstPairingMessage(connection: SignalingConnection): SignalingMessage? {
+        val message = try {
+            connection.receive()
+        } catch (e: IOException) {
+            null
+        }
+        if (message is Hello) {
+            try {
+                connection.send(Unpair)
+            } catch (e: IOException) {
+                // Gone already.
+            }
+        }
+        return message
     }
 
     private fun onPairingConnection(connection: SignalingConnection, firstMessage: SignalingMessage? = null) {
@@ -384,6 +421,13 @@ class BabySession(
                         } else {
                             p.connection.close()
                         }
+                    }
+                    return
+                }
+                if (message == Unpair) {
+                    executor.execute {
+                        if (peer === p) close(p, sendBye = false)
+                        onUnpaired(p.connection.peerDeviceId, p.name)
                     }
                     return
                 }

@@ -43,6 +43,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import dev.wendelin.hausfunk.ui.common.VideoView
+import dev.wendelin.hausfunk.ui.common.Zoom
 import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -70,17 +71,21 @@ fun WatchScreen(
     state: ParentState,
     soundPrefs: SoundPrefs,
     onSoundPrefs: (SoundPrefs) -> Unit,
+    zoom: Zoom,
+    onZoom: (Zoom) -> Unit,
     onClose: () -> Unit,
     onAspectRatio: (Float) -> Unit = {},
     onVideoBounds: (Rect) -> Unit = {},
 ) {
     FullScreenInLandscape()
+    KeepScreenOnWithLightIcons()
     val context = LocalContext.current
     val debugBuild = remember { (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0 }
     val alarm by session.alarm.collectAsState()
     val level by session.level.collectAsState()
     val lastSound by session.lastSound.collectAsState()
     val status by session.status.collectAsState()
+    val gateOpen by session.gateOpen.collectAsState()
     var soundSettings by rememberSaveable { mutableStateOf(false) }
     ShowOverLockScreen(alarm == AlarmState.RINGING)
     Box(
@@ -107,6 +112,8 @@ fun WatchScreen(
                 Modifier.fillMaxSize(),
                 onAspectRatio = onAspectRatio,
                 onBounds = onVideoBounds,
+                zoom = zoom,
+                onZoom = onZoom,
             )
         }
         if (debugBuild) {
@@ -158,7 +165,8 @@ fun WatchScreen(
                 soundPrefs.thresholdDbfs,
                 lastSound,
                 status,
-                Modifier
+                muted = !gateOpen,
+                modifier = Modifier
                     .fillMaxWidth()
                     .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
                     .padding(horizontal = 12.dp, vertical = 10.dp),
@@ -240,6 +248,26 @@ private fun ShowOverLockScreen(enabled: Boolean) {
         onDispose {
             activity.setShowWhenLocked(false)
             activity.setTurnScreenOn(false)
+        }
+    }
+}
+
+/**
+ * While watching, the screen stays on (it is the monitor), and the status bar uses light icons
+ * on the always-dark background.
+ */
+@Composable
+private fun KeepScreenOnWithLightIcons() {
+    val window = LocalActivity.current?.window ?: return
+    val view = LocalView.current
+    DisposableEffect(window) {
+        val controller = WindowCompat.getInsetsController(window, view)
+        val lightBars = controller.isAppearanceLightStatusBars
+        controller.isAppearanceLightStatusBars = false
+        view.keepScreenOn = true
+        onDispose {
+            controller.isAppearanceLightStatusBars = lightBars
+            view.keepScreenOn = false
         }
     }
 }

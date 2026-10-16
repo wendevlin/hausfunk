@@ -1,5 +1,10 @@
 package dev.wendelin.hausfunk.ui
 
+import dev.wendelin.hausfunk.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.Text
+import androidx.compose.material3.AlertDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -52,6 +57,19 @@ fun HausfunkNavHost(app: HausfunkApplication) {
         }
     }
     val openSettings = { navController.navigate(Routes.SETTINGS) { launchSingleTop = true } }
+
+    // The other device removed the pairing (it told us): say so once, on whatever screen is open.
+    val unpaired by app.unpairedNotice.collectAsState()
+    unpaired?.let { name ->
+        AlertDialog(
+            onDismissRequest = { app.unpairedNotice.value = null },
+            title = { Text(stringResource(R.string.unpaired_title)) },
+            text = { Text(stringResource(R.string.unpaired_body, name)) },
+            confirmButton = {
+                TextButton(onClick = { app.unpairedNotice.value = null }) { Text(stringResource(R.string.action_ok)) }
+            },
+        )
+    }
 
     NavHost(navController = navController, startDestination = startDestination) {
         composable(Routes.ONBOARDING) {

@@ -123,4 +123,7 @@
     <string name="settings_parent">Elterngerät</string>
     <string name="settings_alarm_grace">Alarm bei Verbindungsverlust</string>
     <string name="settings_alarm_grace_value">Nach %1$d s</string>
+    <string name="unpaired_title">Kopplung entfernt</string>
+    <string name="unpaired_body">%1$s hat die Kopplung mit diesem Gerät entfernt, darum wurde sie auch hier gelöscht. Um die beiden wieder zusammen zu nutzen, koppelt sie neu.</string>
+    <string name="watch_gate_closed">Ton unter der Schwelle stumm</string>
 </resources>
