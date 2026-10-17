@@ -29,6 +29,22 @@ class ZoomSink(private val onVideoSize: (width: Int, height: Int) -> Unit) : Vid
         }
         val r = region
         if (r == Region.ALL) return out.onFrame(frame)
+        val cropped = try {
+            crop(frame, r)
+        } catch (e: RuntimeException) {
+            // A buffer type that cannot be cropped: show the whole picture rather than crash.
+            null
+        }
+        if (cropped == null) return out.onFrame(frame)
+        out.onFrame(cropped)
+        cropped.release()
+    }
+
+    private fun crop(frame: VideoFrame, r: Region): VideoFrame? {
+        val buffer = frame.buffer
+        val w = buffer.width
+        val h = buffer.height
+        if (w < 4 || h < 4 || !(r.width > 0f && r.height > 0f)) return null
         // The region is given as shown; the buffer may be stored rotated.
         val b = when (frame.rotation) {
             90 -> Region(r.top, 1f - r.left - r.width, r.height, r.width)
@@ -40,8 +56,6 @@ class ZoomSink(private val onVideoSize: (width: Int, height: Int) -> Unit) : Vid
         val ch = ((b.height * h).toInt() and 1.inv()).coerceIn(2, h)
         val x = ((b.left * w).toInt() and 1.inv()).coerceIn(0, w - cw)
         val y = ((b.top * h).toInt() and 1.inv()).coerceIn(0, h - ch)
-        val cropped = VideoFrame(buffer.cropAndScale(x, y, cw, ch, cw, ch), frame.rotation, frame.timestampNs)
-        out.onFrame(cropped)
-        cropped.release()
+        return VideoFrame(buffer.cropAndScale(x, y, cw, ch, cw, ch), frame.rotation, frame.timestampNs)
     }
 }

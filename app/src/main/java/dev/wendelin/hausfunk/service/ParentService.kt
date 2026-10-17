@@ -12,6 +12,7 @@ import android.util.Log
 import dev.wendelin.hausfunk.HausfunkApplication
 import dev.wendelin.hausfunk.R
 import dev.wendelin.hausfunk.alarm.ConnectionAlarm
+import dev.wendelin.hausfunk.data.Role
 import dev.wendelin.hausfunk.compat.nsdReportsAddressChanges
 import dev.wendelin.hausfunk.discovery.FoundBaby
 import dev.wendelin.hausfunk.media.AlarmState
@@ -57,6 +58,9 @@ class ParentService : Service() {
     private var finding = false
     private val notifications by lazy { getSystemService(NotificationManager::class.java) }
 
+    /** Bumped by every stop, so a start that is still setting up does not revive monitoring. */
+    private var generation = 0
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -83,15 +87,28 @@ class ParentService : Service() {
             stopMonitoring()
             return START_NOT_STICKY
         }
+        // One role at a time: watching stops this device being a baby.
+        if (BabyService.running) BabyService.stop(this)
         locks.acquire()
         watched.value = baby
+        val startedIn = generation
         // Restarted by the system after it had killed us: watching was already going on, so a
         // baby that cannot be reached counts as a lost connection and the alarm covers it.
         val resume = (flags and START_FLAG_REDELIVERY) != 0
         app.appScope.launch {
             val identity = app.identity.await()
-            val name = app.settings.current().deviceName
+            val settings = app.settings.current()
+            val name = settings.deviceName
             withContext(Dispatchers.Main) {
+                // Stopped meanwhile ("X" right after tapping, or the service is going away).
+                if (startedIn != generation) return@withContext
+                // A restart after the process died resumes only on a device that is still a parent:
+                // never on one that has become the baby since (it would ring a false alarm).
+                if (resume && (settings.lastRole != Role.PARENT || BabyService.running)) {
+                    Log.i(TAG, "not resuming: this device is no longer a parent")
+                    stopMonitoring()
+                    return@withContext
+                }
                 val s = session ?: createSession(identity)
                 s.connect(baby, Hello(PROTOCOL_VERSION, identity.deviceId, name, appVersion(this@ParentService), watching = true), resume)
             }
@@ -130,7 +147,12 @@ class ParentService : Service() {
         }
         sc.launch {
             combine(s.alarm, s.state) { a, st -> a to st }.collect { (a, st) ->
-                if (a == AlarmState.RINGING) alarm.start((st as? ParentState.WithBaby)?.baby?.name.orEmpty()) else alarm.stop()
+                when {
+                    // Never on a device that runs as the baby; monitoring as a parent ends there.
+                    a == AlarmState.RINGING && BabyService.running -> stopMonitoring()
+                    a == AlarmState.RINGING -> alarm.start((st as? ParentState.WithBaby)?.baby?.name.orEmpty())
+                    else -> alarm.stop()
+                }
             }
         }
         sc.launch {
@@ -189,12 +211,19 @@ class ParentService : Service() {
     /** Swiping the app away keeps monitoring; only "Stop" ends it. */
     override fun onTaskRemoved(rootIntent: Intent?) = Unit
 
+    override fun onCreate() {
+        super.onCreate()
+        running = true
+    }
+
     override fun onDestroy() {
+        running = false
         stopMonitoring()
         super.onDestroy()
     }
 
     private fun stopMonitoring() {
+        generation++
         scope?.cancel()
         scope = null
         if (finding) finder.stop()
@@ -220,6 +249,10 @@ class ParentService : Service() {
 
     companion object {
         private const val TAG = "ParentService"
+
+        /** Whether this device currently runs as a parent (the service exists). Main thread. */
+        @Volatile var running = false
+            private set
         private const val EXTRA_ID = "id"
         private const val EXTRA_NAME = "name"
         private const val EXTRA_HOST = "host"

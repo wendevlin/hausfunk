@@ -199,6 +199,21 @@ Deviations from, or clarifications of, the implementation plan. Newest first.
   shown part's aspect ratio until it fills the screen. Pure region and pinch maths in
   `ui/common/ZoomRegion.kt` with unit tests; up to 6× the fitted size.
 
+## Third round of test feedback
+
+- **One role per device at a time.** Starting the baby stops the parent service, and watching stops
+  the baby service. A parent service restarted by the system after the app died resumes only if
+  the device's last role is still "parent" and it does not run as the baby; and the alarm never
+  rings while the baby service runs (it ends parent monitoring instead). Test: after a crash the
+  restarted parent service reconnected in the background while the user had made the phone the
+  baby, and it rang the connection alarm there.
+- **Zoom crash:** picture-in-picture got the zoomed part's aspect ratio, which can be as tall as
+  the screen (0.43 on the Flip), and Android refused it with an exception. PiP now gets the whole
+  picture's ratio, the allowed range is narrowed to 0.5–2.33, a refused setting is logged instead
+  of crashing, and cropping falls back to the whole picture if a frame cannot be cropped.
+- **Debug builds keep the last crash** (stack trace in private storage) and show it on the next
+  start with "Copy", so test crashes can be reported. Release builds record nothing.
+
 ## Open points for later phases
 
 - **F-Droid and prebuilt libwebrtc.** F-Droid builds from source and is strict about prebuilt

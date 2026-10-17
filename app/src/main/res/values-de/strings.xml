@@ -126,4 +126,6 @@
     <string name="unpaired_title">Kopplung entfernt</string>
     <string name="unpaired_body">%1$s hat die Kopplung mit diesem Gerät entfernt, darum wurde sie auch hier gelöscht. Um die beiden wieder zusammen zu nutzen, koppelt sie neu.</string>
     <string name="watch_gate_closed">Ton unter der Schwelle stumm</string>
+    <string name="crash_title">Die App ist zuletzt abgestürzt</string>
+    <string name="action_copy">Kopieren</string>
 </resources>

@@ -1,6 +1,8 @@
 package dev.wendelin.hausfunk.ui.common
 
 import android.graphics.Rect
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
@@ -41,7 +43,10 @@ fun VideoView(
     detach: (VideoSink) -> Unit,
     modifier: Modifier = Modifier,
     onFirstFrame: () -> Unit = {},
-    /** Width / height of the video as displayed, whenever it changes noticeably. */
+    /**
+     * Width / height of the whole picture as displayed (not of the zoomed part), whenever it
+     * changes noticeably. Picture-in-picture uses it.
+     */
     onAspectRatio: (Float) -> Unit = {},
     /** Where the video is drawn, in window coordinates (for the picture-in-picture animation). */
     onBounds: (Rect) -> Unit = {},
@@ -54,18 +59,26 @@ fun VideoView(
     var video by remember { mutableStateOf(IntSize.Zero) }
     var box by remember { mutableStateOf(IntSize.Zero) }
     val zoomSink = remember {
+        val main = Handler(Looper.getMainLooper())
         ZoomSink { w, h ->
-            val old = video
-            val ratio = w.toFloat() / h
-            val oldRatio = if (old.height > 0) old.width.toFloat() / old.height else 0f
-            if (abs(ratio - oldRatio) > ASPECT_TOLERANCE * ratio) video = IntSize(w, h) // any thread
+            // Reported on the decoder thread; Compose state is changed on the main thread.
+            main.post {
+                val old = video
+                val ratio = w.toFloat() / h
+                val oldRatio = if (old.height > 0) old.width.toFloat() / old.height else 0f
+                if (abs(ratio - oldRatio) > ASPECT_TOLERANCE * ratio) video = IntSize(w, h)
+            }
         }
     }
     val region = visibleRegion(zoom, video.width.toFloat(), video.height.toFloat(), box.width.toFloat(), box.height.toFloat())
     SideEffect { zoomSink.region = region }
-    val aspectRatio = if (video.height > 0) region.width * video.width / (region.height * video.height) else 0f
+    val shown = if (video.height > 0) region.width * video.width / (region.height * video.height) else 0f
+    val aspectRatio = if (shown.isFinite() && shown > 0f) shown else 0f
     val aspectChanged by rememberUpdatedState(onAspectRatio)
-    LaunchedEffect(aspectRatio) { if (aspectRatio > 0f) aspectChanged(aspectRatio) }
+    // The whole picture's ratio: a zoomed part can be as tall as the screen, which picture-in-
+    // picture refuses (it crashed the app).
+    val pictureRatio = if (video.height > 0) video.width.toFloat() / video.height else 0f
+    LaunchedEffect(pictureRatio) { if (pictureRatio > 0f) aspectChanged(pictureRatio) }
     val firstFrame by rememberUpdatedState(onFirstFrame)
     val currentZoom by rememberUpdatedState(zoom)
 

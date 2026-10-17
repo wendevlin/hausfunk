@@ -95,6 +95,7 @@ class HausfunkApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        CrashLog.install(this)
         Notifications.createChannels(this)
         lanNetworks.start()
         settings = SettingsRepository(this, appScope)

@@ -131,7 +131,12 @@ fun ParentRoute(
         // Shared by the watch screen and picture-in-picture, so the zoom stays when the app is left.
         var zoom by remember(watchedId) { mutableStateOf(Zoom.NONE) }
         val inPip = rememberInPictureInPicture()
-        AutoPictureInPicture(enabled = state is ParentState.Connected, aspectRatio = aspectRatio, sourceRect = videoBounds)
+        // While zoomed the shown part has another shape than the PiP window, so no source hint.
+        AutoPictureInPicture(
+            enabled = state is ParentState.Connected,
+            aspectRatio = aspectRatio,
+            sourceRect = videoBounds.takeIf { !zoom.zoomed },
+        )
         if (inPip) {
             // Picture-in-picture: the video and nothing else.
             Box(Modifier.fillMaxSize().background(WatchColors.background)) {

@@ -128,4 +128,6 @@
     <string name="unpaired_title">Pairing removed</string>
     <string name="unpaired_body">%1$s removed the pairing with this device, so it was removed here too. To use the two together again, pair them again.</string>
     <string name="watch_gate_closed">Sound muted below the threshold</string>
+    <string name="crash_title">The app crashed last time</string>
+    <string name="action_copy">Copy</string>
 </resources>

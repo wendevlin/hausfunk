@@ -35,6 +35,9 @@ class BabyService : Service() {
             return START_NOT_STICKY
         }
         if (session != null || job != null) return START_NOT_STICKY
+        // One role at a time: a device that becomes the baby stops listening as a parent (and
+        // can never ring the parents' connection alarm).
+        if (ParentService.running) ParentService.stop(this)
         try {
             startForeground(
                 Notifications.ID_BABY,
@@ -71,7 +74,13 @@ class BabyService : Service() {
     /** Swiping the app away keeps monitoring; only "Stop" ends it. */
     override fun onTaskRemoved(rootIntent: Intent?) = Unit
 
+    override fun onCreate() {
+        super.onCreate()
+        running = true
+    }
+
     override fun onDestroy() {
+        running = false
         stopMonitoring()
         super.onDestroy()
     }
@@ -89,6 +98,10 @@ class BabyService : Service() {
 
     companion object {
         private const val TAG = "BabyService"
+
+        /** Whether this device currently runs as the baby (the service exists). Main thread. */
+        @Volatile var running = false
+            private set
 
         /** Must be called while the baby screen is visible. */
         fun start(context: Context) {

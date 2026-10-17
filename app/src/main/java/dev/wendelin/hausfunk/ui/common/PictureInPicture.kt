@@ -35,22 +35,29 @@ fun rememberInPictureInPicture(): Boolean {
 fun AutoPictureInPicture(enabled: Boolean, aspectRatio: Float, sourceRect: Rect?) {
     val activity = LocalActivity.current ?: return
     DisposableEffect(activity, enabled, aspectRatio, sourceRect) {
-        // Android accepts ratios between 1:2.39 and 2.39:1.
-        val ratio = aspectRatio.coerceIn(MIN_RATIO, MAX_RATIO)
-        activity.setPictureInPictureParams(
-            PictureInPictureParams.Builder()
-                .setAutoEnterEnabled(enabled)
-                .setSeamlessResizeEnabled(true)
-                .setAspectRatio(Rational((ratio * 1000).toInt(), 1000))
-                // Where the video is now, so the window animates from it into the PiP window.
-                .apply { if (sourceRect != null && !sourceRect.isEmpty) setSourceRectHint(sourceRect) }
-                .build(),
-        )
-        onDispose {
-            activity.setPictureInPictureParams(PictureInPictureParams.Builder().setAutoEnterEnabled(false).build())
+        // Android accepts ratios between 1:2.39 and 2.39:1; some phones are stricter.
+        val ratio = if (aspectRatio.isFinite() && aspectRatio > 0f) aspectRatio.coerceIn(MIN_RATIO, MAX_RATIO) else 16f / 9f
+        setParams(activity) {
+            setAutoEnterEnabled(enabled)
+            setSeamlessResizeEnabled(true)
+            setAspectRatio(Rational((ratio * 1000).toInt(), 1000))
+            // Where the video is now, so the window animates from it into the PiP window.
+            if (sourceRect != null && !sourceRect.isEmpty) setSourceRectHint(sourceRect)
         }
+        onDispose { setParams(activity) { setAutoEnterEnabled(false) } }
     }
 }
 
-private const val MIN_RATIO = 0.42f
-private const val MAX_RATIO = 2.38f
+/** A refused picture-in-picture setting must never crash the app; without it there is just no PiP. */
+private fun setParams(activity: android.app.Activity, build: PictureInPictureParams.Builder.() -> Unit) {
+    try {
+        activity.setPictureInPictureParams(PictureInPictureParams.Builder().apply(build).build())
+    } catch (e: IllegalArgumentException) {
+        android.util.Log.w("PictureInPicture", "parameters refused", e)
+    } catch (e: IllegalStateException) {
+        android.util.Log.w("PictureInPicture", "parameters refused", e)
+    }
+}
+
+private const val MIN_RATIO = 0.5f
+private const val MAX_RATIO = 2.33f

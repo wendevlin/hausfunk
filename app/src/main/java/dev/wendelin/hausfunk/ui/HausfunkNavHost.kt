@@ -1,5 +1,13 @@
 package dev.wendelin.hausfunk.ui
 
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import android.content.ClipData
+import android.content.ClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import dev.wendelin.hausfunk.CrashLog
 import dev.wendelin.hausfunk.R
 import androidx.compose.ui.res.stringResource
 import androidx.compose.material3.TextButton
@@ -57,6 +65,37 @@ fun HausfunkNavHost(app: HausfunkApplication) {
         }
     }
     val openSettings = { navController.navigate(Routes.SETTINGS) { launchSingleTop = true } }
+
+    // Debug builds: the last crash, to copy and send.
+    val context = LocalContext.current
+    var crash by remember { mutableStateOf(CrashLog.last(context)) }
+    crash?.let { trace ->
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text(stringResource(R.string.crash_title)) },
+            text = {
+                Text(
+                    trace.take(CRASH_PREVIEW_CHARS),
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    context.getSystemService(ClipboardManager::class.java)
+                        .setPrimaryClip(ClipData.newPlainText("Hausfunk crash", trace))
+                    CrashLog.clear(context)
+                    crash = null
+                }) { Text(stringResource(R.string.action_copy)) }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    CrashLog.clear(context)
+                    crash = null
+                }) { Text(stringResource(R.string.action_ok)) }
+            },
+        )
+    }
 
     // The other device removed the pairing (it told us): say so once, on whatever screen is open.
     val unpaired by app.unpairedNotice.collectAsState()
@@ -140,3 +179,5 @@ fun HausfunkNavHost(app: HausfunkApplication) {
         }
     }
 }
+
+private const val CRASH_PREVIEW_CHARS = 1500
