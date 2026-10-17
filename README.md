@@ -32,8 +32,8 @@ The app follows the phone's language (English or German); Android's per-app lang
   while monitoring continues. Up to four parent phones can watch at once.
 - **Parent phone**: shows the video, the sound level and when the last sound was. Leaving the app
   keeps the video in a small window (picture in picture); with the screen off you keep hearing
-  the baby. Tap the sound level for the last 30 minutes; the gear on it sets the noise threshold
-  and "only play sounds above the threshold".
+  the baby. The slider icon sets the noise threshold and "only play sounds
+  above the threshold".
 - **Alarm**: if the connection is lost for longer than the time set in the settings (15 s by
   default), the parent phone rings at alarm volume, also in silent mode, until you tap
   "Acknowledge". The sound can be changed in the settings.

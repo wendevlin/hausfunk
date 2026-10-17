@@ -34,13 +34,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.foundation.clickable
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import dev.wendelin.hausfunk.media.SoundHistory
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import dev.wendelin.hausfunk.R
 import dev.wendelin.hausfunk.data.SoundPrefs
@@ -76,42 +70,6 @@ fun LevelBar(
     }
 }
 
-/**
- * The last 30 minutes: one bar per 5 s (its loudest level), the threshold as a dashed line and
- * a dot above every bar with a sound event. Gaps where the baby was not connected stay empty.
- */
-@Composable
-private fun HistoryStrip(history: List<SoundHistory.Bucket>, thresholdDbfs: Float, modifier: Modifier = Modifier) {
-    val bar = Color.White.copy(alpha = 0.6f)
-    val loud = MaterialTheme.colorScheme.tertiary
-    val line = Color.White.copy(alpha = 0.5f)
-    Canvas(modifier) {
-        if (history.isEmpty()) return@Canvas
-        val w = size.width / history.size
-        val dot = 2.dp.toPx()
-        val top = dot * 3
-        val height = size.height - top
-        history.forEachIndexed { i, b ->
-            val peak = b.peak ?: return@forEachIndexed
-            val h = height * fraction(peak)
-            drawRect(
-                if (peak >= thresholdDbfs) loud else bar,
-                topLeft = Offset(i * w, size.height - h),
-                size = Size(maxOf(w - 0.5f, 0.5f), h),
-            )
-            if (b.sound) drawCircle(loud, radius = dot, center = Offset(i * w + w / 2, dot))
-        }
-        val y = size.height - height * fraction(thresholdDbfs)
-        drawLine(
-            line,
-            Offset(0f, y),
-            Offset(size.width, y),
-            strokeWidth = 1.dp.toPx(),
-            pathEffect = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx())),
-        )
-    }
-}
-
 /** "Last sound 4 minutes ago", kept current. [lastSound] is elapsed time. */
 @Composable
 fun lastSoundText(lastSound: Long?): String {
@@ -137,19 +95,9 @@ fun SoundStatus(
     lastSound: Long?,
     status: BabyStatus?,
     muted: Boolean,
-    history: List<SoundHistory.Bucket>,
     modifier: Modifier = Modifier,
 ) {
-    // A tap opens the last 30 minutes above the live bar.
-    var expanded by rememberSaveable { mutableStateOf(false) }
-    Column(modifier.clickable(onClickLabel = stringResource(R.string.history_toggle), role = Role.Button) { expanded = !expanded }) {
-        if (expanded) {
-            HistoryStrip(history, thresholdDbfs, Modifier.fillMaxWidth().height(64.dp))
-            Row(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(stringResource(R.string.history_start), color = WatchColors.onBackground, style = MaterialTheme.typography.labelSmall)
-                Text(stringResource(R.string.history_now), color = WatchColors.onBackground, style = MaterialTheme.typography.labelSmall)
-            }
-        }
+    Column(modifier) {
         LevelBar(level, thresholdDbfs, Modifier.fillMaxWidth().height(4.dp))
         Row(
             Modifier

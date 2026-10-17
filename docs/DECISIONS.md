@@ -284,8 +284,8 @@ Owner's request: review everything, remove leftovers, keep it simple, split what
 - **Thermal fallback**: at `THERMAL_STATUS_SEVERE` and above the baby drops to 640×480 at 10 fps
   and tells the parents (note on the parent screen); at `MODERATE` or below it returns to normal.
   The gap between the two avoids flapping. The camera itself captures less too (most of the heat).
-- **Sound history**: 30 minutes in 5 s buckets (peak level, sound yes/no), kept on the parent in
-  memory per watched baby; it starts empty after the app was closed. Tap the level bar to open it.
+- **No sound history**: built, then removed after testing (owner: not understandable, not
+  needed). The live level and "last sound" are enough. R15 is dropped.
 - **Alarm sound**: the system sound picker, without "Silent"; "Default" follows the phone's alarm
   sound. A chosen sound that can no longer be read falls back to the phone's alarm sound, checked
   when the alarm starts.

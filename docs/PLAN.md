@@ -57,7 +57,7 @@ One APK serves both roles; everything below is in scope for v1 unless marked.
 | R12 | Devices discover each other automatically on the LAN; the user never types an IP address. |
 | R13 | Each parent shows when the last sound above its threshold happened ("Last sound 4 min ago"): on the watch screen, in PiP and in the ongoing notification. |
 | R14 | Each parent sets its own noise threshold with a slider beside a live level meter. An optional "Only play sound above threshold" mode mutes everything quieter. |
-| R15 | Parents see the sound level live and can expand a short history of the last 30 minutes. *(Phase 7; may be deferred to v1.1 if time is short.)* |
+| R15 | ~~Parents can expand a short history of the last 30 minutes.~~ Dropped after testing in phase 7 (see DECISIONS). |
 | R16 | Every screen works in portrait and landscape, on phones and tablets. Rotating never interrupts the stream. |
 | R17 | The UI is minimal: video and sound level are the content, everything else stays small and out of the way. |
 | R18 | A parent may be paired with several baby devices and monitors one at a time. |
@@ -216,7 +216,6 @@ Use only stock Jetpack Compose Material 3 components with a fixed colour scheme 
 **Sound level display (parent)**
 
 - Live: a thin bar under the video (along the side in landscape) that follows the `level` messages, with the threshold as a small tick. "Last sound 4 min ago" sits next to it.
-- History (phase 7): tapping the bar expands a strip with the last 30 minutes of level (the peak of every 5 s, 360 values), the threshold as a dashed line and sound events as dots. Drawn with a Compose `Canvas`; kept in memory in the parent service only, never stored.
 
 **Layouts and orientation**
 
@@ -343,7 +342,7 @@ Eight phases, each ending in an installable APK that the user tests on two real 
    - Done when: turning off the baby phone's Wi-Fi makes the parent alarm within the grace period, turning it back on reconnects without user action, force-stopping the baby app alarms, and with the gate on quiet noises stay silent while a loud sound plays in full.
 6. **Multiple parents and video gating**: `watching` messages, per-sender `active` flag, camera stops when nobody watches, parent limit with `busy`, connected-parents list on the baby screen.
    - Done when: three parents connect at once, only those in foreground or PiP receive video, and the baby phone stays below the thermal `SEVERE` state for one hour.
-7. **Polish**: app size (see "App size"), thermal fallback, sound history (R15), alarm settings, camera switch, German strings reviewed, README with install and limitations, edge cases from testing.
+7. **Polish**: app size (see "App size"), thermal fallback, alarm settings, camera switch, German strings reviewed, README with install and limitations, edge cases from testing.
    - Galaxy Flip (foldables, owner's request): Flex mode when half folded (`androidx.window` `FoldingFeature`): parent shows the video on the upper half and level, last sound and controls on the lower half; baby stands half folded with the camera on the upright half and its screen off or a small status below the fold. Check the layouts on the Flip's cover screen (small, nearly square window) for both roles. Test on the Flip 7.
 
 8. **Watching from outside, over a VPN (owner's request)**: no Hausfunk server. Whoever wants to watch from away sets up a VPN to the home network (WireGuard on the router, Tailscale with a subnet router, …); the phones then reach each other as on the LAN, and the end-to-end security stays exactly as it is.
@@ -375,7 +374,6 @@ Unit tests cover the logic that can fail silently; everything else is accepted b
 - [ ] Whisper-level sound 2 m from the baby phone is audible on the parent.
 - [ ] Gate mode with a threshold set while the baby sleeps: turning over and breathing stay silent, crying plays in full.
 - [ ] "Last sound" updates within 1 second of a sound and keeps counting correctly with the screen off.
-- [ ] Sound history shows the last 30 minutes with the threshold line and sound events (if R15 was built).
 - [ ] Rotating parent and baby phones during streaming: no interruption, picture stays upright.
 - [ ] Every screen is usable on a tablet in both orientations and on a phone in landscape.
 - [ ] Wi-Fi off on the baby phone: every parent alarms within the grace period.
