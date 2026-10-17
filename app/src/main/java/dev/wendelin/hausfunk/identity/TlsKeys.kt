@@ -33,8 +33,7 @@ class IdentityKeyManager(private val privateKey: PrivateKey, private val certifi
 /**
  * Trust is pinning: a peer is accepted if and only if [accept] says yes to the SHA-256 fingerprint
  * (device ID) of its certificate. Validity dates, chains, issuers and host names are ignored on
- * purpose. [accept] is asked during every handshake, so it always sees the current trust store and
- * pairing window. Lint's CustomX509TrustManager warning is about trust managers that accept
+ * purpose. [accept] is asked during every handshake, so it always sees the current trust store. Lint's CustomX509TrustManager warning is about trust managers that accept
  * everything; this one replaces CA validation with stricter pinning on purpose (docs/PLAN.md).
  */
 @SuppressLint("CustomX509TrustManager")
@@ -54,15 +53,8 @@ class PinningTrustManager(private val accept: (deviceId: String) -> Boolean) : X
 }
 
 /** How the baby classifies a parent after the handshake. Never TRUSTED for an unknown certificate. */
-enum class PeerClass { TRUSTED, PAIRING, REJECTED }
+enum class PeerClass { TRUSTED, PAIRING }
 
-/**
- * The baby's decision for a client certificate: pinned devices are TRUSTED; an unknown device is
- * PAIRING only while the pairing window is open; anything else is REJECTED. The server trust
- * manager and the post-handshake classification both use this, with fresh values each time.
- */
-fun classifyPeer(deviceId: String, trusted: Set<String>, pairingWindowOpen: Boolean): PeerClass = when {
-    deviceId in trusted -> PeerClass.TRUSTED
-    pairingWindowOpen -> PeerClass.PAIRING
-    else -> PeerClass.REJECTED
-}
+/** Pinned devices are TRUSTED; any other device may only ask to pair. */
+fun classifyPeer(deviceId: String, trusted: Set<String>): PeerClass =
+    if (deviceId in trusted) PeerClass.TRUSTED else PeerClass.PAIRING

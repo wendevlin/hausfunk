@@ -13,6 +13,7 @@ import dev.wendelin.hausfunk.HausfunkApplication
 import dev.wendelin.hausfunk.R
 import dev.wendelin.hausfunk.alarm.ConnectionAlarm
 import dev.wendelin.hausfunk.data.Role
+import dev.wendelin.hausfunk.identity.Identity
 import dev.wendelin.hausfunk.compat.nsdReportsAddressChanges
 import dev.wendelin.hausfunk.discovery.FoundBaby
 import dev.wendelin.hausfunk.media.AlarmState
@@ -25,7 +26,6 @@ import dev.wendelin.hausfunk.ui.common.appVersion
 import java.net.InetAddress
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -55,22 +55,28 @@ class ParentService : Service() {
     private val locks by lazy { Locks(this, "parent") }
     private val alarm by lazy { ConnectionAlarm(this) }
     private val finder get() = app.babyFinder
-    private var finding = false
     private val notifications by lazy { getSystemService(NotificationManager::class.java) }
 
-    /** Bumped by every stop, so a start that is still setting up does not revive monitoring. */
+    /**
+     * Bumped by every start and stop: a start still setting up gives way to a later start or a
+     * stop, so it never revives monitoring or watches the wrong baby.
+     */
     private var generation = 0
+
+    /** The latest start, so stopping does not swallow one the system queued after it. */
+    private var lastStartId = 0
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        lastStartId = startId
         if (intent?.action == ACTION_STOP) {
             stopMonitoring()
             return START_NOT_STICKY
         }
         val baby = intent?.let(::babyFrom)
         if (baby == null) {
-            stopSelf()
+            if (session == null) stopSelf(startId)
             return START_NOT_STICKY
         }
         try {
@@ -91,7 +97,7 @@ class ParentService : Service() {
         if (BabyService.running) BabyService.stop(this)
         locks.acquire()
         watched.value = baby
-        val startedIn = generation
+        val startedIn = ++generation
         // Restarted by the system after it had killed us: watching was already going on, so a
         // baby that cannot be reached counts as a lost connection and the alarm covers it.
         val resume = (flags and START_FLAG_REDELIVERY) != 0
@@ -110,14 +116,15 @@ class ParentService : Service() {
                     return@withContext
                 }
                 val s = session ?: createSession(identity)
-                s.connect(baby, Hello(PROTOCOL_VERSION, identity.deviceId, name, appVersion(this@ParentService), watching = true), resume)
+                val hello = Hello(PROTOCOL_VERSION, identity.deviceId, name, appVersion(this@ParentService), watching = true)
+                s.connect(baby, hello, settings.alarmGraceSeconds * 1_000L, resume)
             }
         }
         // If the system kills and restarts the service, try to resume watching the same baby.
         return START_REDELIVER_INTENT
     }
 
-    private fun createSession(identity: dev.wendelin.hausfunk.identity.Identity): ParentSession {
+    private fun createSession(identity: Identity): ParentSession {
         val s = ParentSession(
             this,
             identity,
@@ -129,14 +136,15 @@ class ParentService : Service() {
         session = s
         app.parentSession.value = s
         finder.start()
-        finding = true
         val sc = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         scope = sc
         sc.launch {
             // A baby removed in the settings is disconnected and monitoring ends.
             app.trustedIds.filterNotNull().collect { ids ->
-                s.onTrustChanged(ids) // tells the baby, if it was removed here
-                if (watched.value?.deviceId !in ids) stopMonitoring()
+                if (watched.value?.deviceId !in ids) {
+                    s.sendUnpair() // so the baby forgets us too
+                    stopMonitoring()
+                }
             }
         }
         sc.launch {
@@ -226,8 +234,7 @@ class ParentService : Service() {
         generation++
         scope?.cancel()
         scope = null
-        if (finding) finder.stop()
-        finding = false
+        if (session != null) finder.stop() // started with the session
         alarm.stop()
         session?.release()
         session = null
@@ -235,7 +242,7 @@ class ParentService : Service() {
         watched.value = null
         locks.release()
         stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+        stopSelf(lastStartId)
     }
 
     private fun babyFrom(intent: Intent): FoundBaby? {

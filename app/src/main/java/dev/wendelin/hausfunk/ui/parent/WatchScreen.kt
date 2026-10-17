@@ -10,6 +10,10 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.outlined.Tune
 import android.media.AudioManager
 import androidx.compose.foundation.layout.Arrangement
@@ -63,22 +67,28 @@ object WatchColors {
 
 /**
  * Video with sound, the sound level with the last sound, the baby's battery, the connection state
- * and the connection-loss alarm.
+ * and the connection-loss alarm. In picture-in-picture ([inPip]) only the video with the last
+ * sound and a dot while the connection is down; the same video view stays, so entering and
+ * leaving PiP does not restart the renderer.
  */
 @Composable
 fun WatchScreen(
     session: ParentSession,
     state: ParentState,
+    inPip: Boolean,
     soundPrefs: SoundPrefs,
-    onSoundPrefs: (SoundPrefs) -> Unit,
+    onSoundPrefs: ((SoundPrefs) -> SoundPrefs) -> Unit,
     zoom: Zoom,
     onZoom: (Zoom) -> Unit,
     onClose: () -> Unit,
-    onAspectRatio: (Float) -> Unit = {},
-    onVideoBounds: (Rect) -> Unit = {},
+    onAspectRatio: (Float) -> Unit,
+    onVideoBounds: (Rect) -> Unit,
 ) {
-    FullScreenInLandscape()
-    KeepScreenOnWithLightIcons()
+    if (!inPip) {
+        FullScreenInLandscape()
+        KeepScreenOnWithLightIcons()
+        BackHandler(onBack = onClose)
+    }
     val context = LocalContext.current
     val debugBuild = remember { (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0 }
     val alarm by session.alarm.collectAsState()
@@ -95,7 +105,7 @@ fun WatchScreen(
     ) {
         // The session knows whether frames arrive on the current connection, also after a reconnect.
         val videoArriving by session.videoArriving.collectAsState()
-        var noFrameYet by remember { mutableStateOf(false) }
+        var noFrameYet by remember { mutableStateOf(false) } // connected, but no frame for a while
         val connected = state is ParentState.Connected
         LaunchedEffect(connected, videoArriving) {
             noFrameYet = false
@@ -113,8 +123,12 @@ fun WatchScreen(
                 onAspectRatio = onAspectRatio,
                 onBounds = onVideoBounds,
                 zoom = zoom,
-                onZoom = onZoom,
+                onZoom = if (inPip) null else onZoom,
             )
+        }
+        if (inPip) {
+            PipBadge(state, lastSound, Modifier.align(Alignment.BottomStart))
+            return@Box
         }
         if (debugBuild) {
             val stats by session.videoStats.collectAsState()
@@ -180,7 +194,7 @@ fun WatchScreen(
                 is ParentState.Busy -> stringResource(R.string.watch_busy, state.baby.name) + "\n" +
                     stringResource(R.string.watch_busy_retrying)
                 is ParentState.Reconnecting -> stringResource(R.string.watch_reconnecting, state.baby.name)
-                is ParentState.Connected -> if (noFrameYet && !videoArriving) stringResource(R.string.watch_no_picture) else null
+                is ParentState.Connected -> if (noFrameYet) stringResource(R.string.watch_no_picture) else null
                 ParentState.Idle -> null
             }
             if (message != null) {
@@ -202,8 +216,30 @@ fun WatchScreen(
             }
         }
     }
-    if (soundSettings) {
+    if (soundSettings && !inPip) {
         SoundSettingsSheet(level, soundPrefs, onSoundPrefs, onDismiss = { soundSettings = false })
+    }
+}
+
+/** Picture-in-picture: the last sound, and a red dot while the connection is down. */
+@Composable
+private fun PipBadge(state: ParentState, lastSound: Long?, modifier: Modifier = Modifier) {
+    Row(
+        modifier
+            .padding(4.dp)
+            .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(4.dp))
+            .padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (state !is ParentState.Connected) {
+            Box(
+                Modifier
+                    .padding(end = 4.dp)
+                    .size(8.dp)
+                    .background(MaterialTheme.colorScheme.error, CircleShape),
+            )
+        }
+        Text(lastSoundText(lastSound), color = WatchColors.onBackground, style = MaterialTheme.typography.labelSmall)
     }
 }
 

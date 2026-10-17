@@ -128,4 +128,5 @@
     <string name="watch_gate_closed">Ton unter der Schwelle stumm</string>
     <string name="crash_title">Die App ist zuletzt abgestürzt</string>
     <string name="action_copy">Kopieren</string>
+    <string name="permissions_missing_parent">Hausfunk braucht Zugriff auf das lokale Netzwerk, um das Babygerät zu finden. Erlaube ihn, um fortzufahren.</string>
 </resources>

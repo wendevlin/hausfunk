@@ -138,7 +138,13 @@ fun SoundStatus(
 /** Threshold beside the live level, the gate switch and its hold time. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SoundSettingsSheet(level: Float?, prefs: SoundPrefs, onChange: (SoundPrefs) -> Unit, onDismiss: () -> Unit) {
+fun SoundSettingsSheet(
+    level: Float?,
+    prefs: SoundPrefs,
+    /** Each change only touches its own field of the stored settings, so quick changes never undo each other. */
+    onChange: ((SoundPrefs) -> SoundPrefs) -> Unit,
+    onDismiss: () -> Unit,
+) {
     // Sliders move freely; the setting is stored when the finger lifts.
     var threshold by remember(prefs.thresholdDbfs) { mutableFloatStateOf(prefs.thresholdDbfs) }
     var hold by remember(prefs.holdSeconds) { mutableFloatStateOf(prefs.holdSeconds.toFloat()) }
@@ -174,7 +180,10 @@ fun SoundSettingsSheet(level: Float?, prefs: SoundPrefs, onChange: (SoundPrefs) 
                 value = fraction(threshold),
                 onValueChange = { threshold = SCALE_MIN_DBFS - SCALE_MIN_DBFS * it },
                 valueRange = fraction(SoundPrefs.THRESHOLD_RANGE.start)..fraction(SoundPrefs.THRESHOLD_RANGE.endInclusive),
-                onValueChangeFinished = { onChange(prefs.copy(thresholdDbfs = threshold.roundToInt().toFloat())) },
+                onValueChangeFinished = {
+                    val value = threshold.roundToInt().toFloat()
+                    onChange { it.copy(thresholdDbfs = value) }
+                },
             )
             Row(
                 Modifier
@@ -183,7 +192,7 @@ fun SoundSettingsSheet(level: Float?, prefs: SoundPrefs, onChange: (SoundPrefs) 
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(stringResource(R.string.sound_gate), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                Switch(checked = prefs.gate, onCheckedChange = { onChange(prefs.copy(gate = it)) })
+                Switch(checked = prefs.gate, onCheckedChange = { on -> onChange { it.copy(gate = on) } })
             }
             if (prefs.gate) {
                 Text(
@@ -195,7 +204,10 @@ fun SoundSettingsSheet(level: Float?, prefs: SoundPrefs, onChange: (SoundPrefs) 
                     value = hold,
                     onValueChange = { hold = it },
                     valueRange = SoundPrefs.HOLD_RANGE.first.toFloat()..SoundPrefs.HOLD_RANGE.last.toFloat(),
-                    onValueChangeFinished = { onChange(prefs.copy(holdSeconds = hold.roundToInt())) },
+                    onValueChangeFinished = {
+                        val seconds = hold.roundToInt()
+                        onChange { it.copy(holdSeconds = seconds) }
+                    },
                 )
             }
         }

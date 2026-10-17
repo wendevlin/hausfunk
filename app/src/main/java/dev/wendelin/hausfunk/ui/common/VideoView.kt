@@ -42,7 +42,6 @@ fun VideoView(
     attach: (VideoSink) -> Unit,
     detach: (VideoSink) -> Unit,
     modifier: Modifier = Modifier,
-    onFirstFrame: () -> Unit = {},
     /**
      * Width / height of the whole picture as displayed (not of the zoomed part), whenever it
      * changes noticeably. Picture-in-picture uses it.
@@ -74,13 +73,14 @@ fun VideoView(
     SideEffect { zoomSink.region = region }
     val shown = if (video.height > 0) region.width * video.width / (region.height * video.height) else 0f
     val aspectRatio = if (shown.isFinite() && shown > 0f) shown else 0f
-    val aspectChanged by rememberUpdatedState(onAspectRatio)
+    val currentOnAspectRatio by rememberUpdatedState(onAspectRatio)
     // The whole picture's ratio: a zoomed part can be as tall as the screen, which picture-in-
     // picture refuses (it crashed the app).
     val pictureRatio = if (video.height > 0) video.width.toFloat() / video.height else 0f
-    LaunchedEffect(pictureRatio) { if (pictureRatio > 0f) aspectChanged(pictureRatio) }
-    val firstFrame by rememberUpdatedState(onFirstFrame)
+    LaunchedEffect(pictureRatio) { if (pictureRatio > 0f) currentOnAspectRatio(pictureRatio) }
     val currentZoom by rememberUpdatedState(zoom)
+    // The gesture blocks below live as long as the view; they must call the current handler.
+    val currentOnZoom by rememberUpdatedState(onZoom)
 
     val gestures = if (onZoom == null) {
         Modifier
@@ -89,7 +89,7 @@ fun VideoView(
             .pointerInput(Unit) {
                 detectTransformGestures { centroid, pan, factor, _ ->
                     val before = centroid - pan
-                    onZoom(
+                    currentOnZoom?.invoke(
                         zoomBy(
                             currentZoom, factor, before.x, before.y, centroid.x, centroid.y,
                             video.width.toFloat(), video.height.toFloat(), size.width.toFloat(), size.height.toFloat(),
@@ -97,7 +97,7 @@ fun VideoView(
                     )
                 }
             }
-            .pointerInput(Unit) { detectTapGestures(onDoubleTap = { onZoom(Zoom.NONE) }) }
+            .pointerInput(Unit) { detectTapGestures(onDoubleTap = { currentOnZoom?.invoke(Zoom.NONE) }) }
     }
     Box(
         modifier
@@ -113,13 +113,7 @@ fun VideoView(
                 },
             factory = { context ->
                 SurfaceViewRenderer(context).apply {
-                    init(
-                        eglBase.eglBaseContext,
-                        object : RendererCommon.RendererEvents {
-                            override fun onFirstFrameRendered() = firstFrame()
-                            override fun onFrameResolutionChanged(width: Int, height: Int, rotation: Int) = Unit
-                        },
-                    )
+                    init(eglBase.eglBaseContext, null)
                     setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT)
                     setEnableHardwareScaler(true)
                     zoomSink.target = this

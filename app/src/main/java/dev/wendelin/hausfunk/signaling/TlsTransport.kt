@@ -33,16 +33,16 @@ class TlsTransport(
     private val keyManager = IdentityKeyManager(identity.privateKey, identity.certificate)
 
     /**
-     * Baby side. A client certificate passes the handshake if it is pinned, or while
-     * [allowPairing] says yes; after the handshake the peer is classified again with fresh values.
-     * An unknown peer can only ever reach the pairing exchange, never signaling.
+     * Baby side. Any client certificate completes the handshake, because any device may ask to
+     * pair; afterwards the peer is classified with the current trust store. An unknown peer
+     * ([PeerClass.PAIRING]) can only ever reach the pairing exchange, never signaling.
      */
-    fun listen(allowPairing: () -> Boolean): SignalingServer {
-        val trust = PinningTrustManager { classifyPeer(it, trustedIds(), allowPairing()) != PeerClass.REJECTED }
+    fun listen(): SignalingServer {
+        val trust = PinningTrustManager { true }
         val serverSocket = context(trust).serverSocketFactory.createServerSocket(0) as SSLServerSocket
         serverSocket.enabledProtocols = PROTOCOLS
         serverSocket.needClientAuth = true
-        return Server(serverSocket, allowPairing)
+        return Server(serverSocket)
     }
 
     /**
@@ -81,7 +81,7 @@ class TlsTransport(
             bind(socket)
             socket.enabledProtocols = PROTOCOLS
             socket.connect(InetSocketAddress(address, port), connectTimeoutMs)
-            return handshake(socket, peerClass)
+            return handshake(socket) { peerClass }
         } catch (e: IOException) {
             socket.close()
             throw e
@@ -91,17 +91,14 @@ class TlsTransport(
     private fun context(trust: X509ExtendedTrustManager): SSLContext =
         SSLContext.getInstance("TLSv1.3").apply { init(arrayOf(keyManager), arrayOf(trust), SecureRandom()) }
 
-    private inner class Server(
-        private val serverSocket: SSLServerSocket,
-        private val allowPairing: () -> Boolean,
-    ) : SignalingServer {
+    private inner class Server(private val serverSocket: SSLServerSocket) : SignalingServer {
         override val port: Int get() = serverSocket.localPort
 
         override fun accept(): SignalingServer.Pending {
             val socket = serverSocket.accept() as SSLSocket
             return object : SignalingServer.Pending {
                 override fun handshake(): SignalingConnection = try {
-                    handshake(socket) { deviceId -> classifyPeer(deviceId, trustedIds(), allowPairing()) }
+                    handshake(socket) { deviceId -> classifyPeer(deviceId, trustedIds()) }
                 } catch (e: IOException) {
                     socket.close()
                     throw e
@@ -114,8 +111,6 @@ class TlsTransport(
         override fun close() = serverSocket.close()
     }
 
-    private fun handshake(socket: SSLSocket, peerClass: PeerClass): SignalingConnection = handshake(socket) { peerClass }
-
     private fun handshake(socket: SSLSocket, classify: (String) -> PeerClass): SignalingConnection {
         socket.soTimeout = HANDSHAKE_TIMEOUT_MS
         socket.tcpNoDelay = true
@@ -126,7 +121,6 @@ class TlsTransport(
         val der = certificate.encoded
         val deviceId = Fingerprint.deviceId(der)
         val peerClass = classify(deviceId)
-        if (peerClass == PeerClass.REJECTED) throw IOException("peer not paired")
         socket.soTimeout = SETUP_READ_TIMEOUT_MS
         return Connection(socket, deviceId, Fingerprint.sha256(der), der, peerClass)
     }

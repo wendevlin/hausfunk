@@ -20,13 +20,10 @@ class LanNetworks(context: Context, private val onChange: () -> Unit) {
     private val links = mutableMapOf<Network, LinkProperties>()
 
     private val callback = object : ConnectivityManager.NetworkCallback() {
-        override fun onAvailable(network: Network) {
-            synchronized(links) { connectivity.getLinkProperties(network)?.let { links[network] = it } }
-            onChange()
-        }
-
+        // A network counts once its routes are known; also when its subnet changes.
         override fun onLinkPropertiesChanged(network: Network, linkProperties: LinkProperties) {
-            synchronized(links) { links[network] = linkProperties }
+            val old = synchronized(links) { links.put(network, linkProperties) }
+            if (old == null || old.routes != linkProperties.routes) onChange()
         }
 
         override fun onLost(network: Network) {

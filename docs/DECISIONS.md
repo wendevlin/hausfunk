@@ -214,6 +214,40 @@ Deviations from, or clarifications of, the implementation plan. Newest first.
 - **Debug builds keep the last crash** (stack trace in private storage) and show it on the next
   start with "Copy", so test crashes can be reported. Release builds record nothing.
 
+## Review before the phase 4–5 test
+
+Owner's request: review everything, remove leftovers, keep it simple, split what is too big.
+
+- **Parent: "connected" means the baby answers** (first `pong`), no longer ICE connected. A baby
+  whose app hangs while the phone still answers ICE could otherwise silence the alarm again and
+  again. The alarm logic is now its own pure class `LossAlarm` with unit tests; the grace period
+  goes into `connect()`, so a resumed watch uses the user's setting from the first second.
+- **Parent service:** every start (not only stops) bumps the generation, so of two quick starts the
+  later one wins; `stopSelf(startId)` keeps a start the system queued meanwhile; a link that is no
+  longer current never sends `hello` (a late one could push the new connection off the baby).
+- **Pairing no longer fails after 30 s of waiting** for the other user: pairing connections have
+  no read timeout; the exchange's 120 s limit ends them.
+- **Baby: one dispatcher for every connection's first message** (see PROTOCOL.md, Transport), read
+  within one deadline. A trusted parent that wants to pair again is no longer told `busy` while
+  another parent watches, and trust is checked again when a connection is accepted. After any
+  failed pairing nobody can pair for 10 s, so new keys per attempt gain nothing. A failed attempt
+  that never reached the emojis no longer covers the baby screen.
+- **Baby service:** the coroutine owns the session, so "Stop" while it is still starting can no
+  longer leave camera and microphone running without a service; a failed start releases them at
+  once.
+- **The "pairing window" is gone from the code** (the baby accepts any certificate in the
+  handshake and classifies afterwards), as it was already gone from the UI.
+- **Split:** `ParentSession` → `LossAlarm`, `ParentAudio`, `VideoStatsMeter`; `BabySession` →
+  `BabyMedia`; `ParentHomeScreen.kt` → `ParentRoute.kt` and the list. Picture-in-picture and the
+  watch screen share one video view, so entering PiP no longer restarts the renderer.
+- **Smaller fixes:** quick sound-setting changes no longer undo each other (stored as a change, not
+  a copy); the parent's permission hint no longer mentions the camera; unreadable settings or trust
+  files start over instead of stopping the app; discovery retries a failed start and ignores late
+  results for lost services; the mDNS name fits 63 bytes; a new network counts once its routes are
+  known.
+- Removed: `kotlinx-coroutines-test` (unused), the renderer's first-frame callback, `disconnect()`,
+  `Reconnecting.since`.
+
 ## Open points for later phases
 
 - **F-Droid and prebuilt libwebrtc.** F-Droid builds from source and is strict about prebuilt

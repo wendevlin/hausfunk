@@ -19,4 +19,19 @@ class SerialExecutorTest {
         assertTrue(done.await(5, TimeUnit.SECONDS))
         assertEquals((0 until 100).toList(), seen)
     }
+
+    @Test
+    fun schedulesAndRefusesAfterShutdown() {
+        val executor = SerialExecutor("test")
+        val ran = CountDownLatch(1)
+        var cancelledRan = false
+        executor.schedule(10) { ran.countDown() }
+        executor.schedule(10) { cancelledRan = true }?.cancel(false)
+        assertTrue(ran.await(5, TimeUnit.SECONDS))
+        assertTrue(executor.tryExecute {})
+        executor.shutdown()
+        assertEquals(false, executor.tryExecute {})
+        assertEquals(null, executor.schedule(10) {})
+        assertEquals(false, cancelledRan)
+    }
 }

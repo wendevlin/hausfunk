@@ -6,7 +6,7 @@ import android.os.PowerManager
 
 /**
  * Keeps the CPU and Wi-Fi awake while monitoring. Not relied on: some phones throttle anyway,
- * which is what the connection-loss alarm (phase 5) is for.
+ * which is what the connection-loss alarm is for.
  */
 class Locks(context: Context, tag: String) {
     private val wakeLock = context.getSystemService(PowerManager::class.java)

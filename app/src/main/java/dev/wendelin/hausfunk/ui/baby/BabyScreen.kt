@@ -85,6 +85,8 @@ fun BabyRoute(app: HausfunkApplication, onStop: () -> Unit, onOpenSettings: () -
     }
     // Leaving the screen must not stop monitoring: back just moves the app out of the way.
     BackHandler { activity?.moveTaskToBack(true) }
+    // Kept here, so a pairing request shown in between does not light the screen up again.
+    var screenOff by rememberSaveable { mutableStateOf(false) }
     val pairing = state.pairing
     if (pairing != null) {
         val pairingState by pairing.state.collectAsState()
@@ -102,7 +104,7 @@ fun BabyRoute(app: HausfunkApplication, onStop: () -> Unit, onOpenSettings: () -
             return
         }
     }
-    BabyScreen(state, session, missing, stop, onOpenSettings)
+    BabyScreen(state, session, missing, screenOff, { screenOff = it }, stop, onOpenSettings)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -111,12 +113,13 @@ private fun BabyScreen(
     state: BabyState,
     session: BabySession?,
     missing: List<String>,
+    screenOff: Boolean,
+    onScreenOff: (Boolean) -> Unit,
     onStop: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
-    var screenOff by rememberSaveable { mutableStateOf(false) }
     if (screenOff) {
-        ScreenOff(onWake = { screenOff = false })
+        ScreenOff(onWake = { onScreenOff(false) })
         return
     }
     Scaffold(
@@ -144,7 +147,7 @@ private fun BabyScreen(
                     .padding(horizontal = 24.dp, vertical = 16.dp),
             ) {
                 if (missing.isNotEmpty()) {
-                    PermissionHint(missing)
+                    PermissionHint(missing, baby = true)
                     Spacer(Modifier.weight(1f))
                 } else {
                     // The baby's own picture, so the phone can be placed well.
@@ -194,7 +197,7 @@ private fun BabyScreen(
                         }
                     }
                     Spacer(Modifier.weight(1f))
-                    OutlinedButton(onClick = { screenOff = true }, enabled = missing.isEmpty()) {
+                    OutlinedButton(onClick = { onScreenOff(true) }, enabled = missing.isEmpty()) {
                         Text(stringResource(R.string.baby_screen_off))
                     }
                     Button(onClick = onStop) { Text(stringResource(R.string.baby_stop)) }

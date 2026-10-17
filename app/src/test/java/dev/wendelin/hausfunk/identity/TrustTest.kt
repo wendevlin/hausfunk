@@ -29,18 +29,8 @@ class TrustTest {
     @Test
     fun anUnknownCertificateIsNeverTrusted() {
         val trusted = setOf(TestCerts.PARENT_ID)
-        assertEquals(PeerClass.TRUSTED, classifyPeer(TestCerts.PARENT_ID, trusted, pairingWindowOpen = false))
-        assertEquals(PeerClass.TRUSTED, classifyPeer(TestCerts.PARENT_ID, trusted, pairingWindowOpen = true))
-        assertEquals(PeerClass.REJECTED, classifyPeer(TestCerts.STRANGER_ID, trusted, pairingWindowOpen = false))
-        assertEquals(PeerClass.PAIRING, classifyPeer(TestCerts.STRANGER_ID, trusted, pairingWindowOpen = true))
-    }
-
-    @Test
-    fun serverTrustManagerFollowsTheWindow() {
-        var windowOpen = false
-        val manager = PinningTrustManager { classifyPeer(it, setOf(TestCerts.PARENT_ID), windowOpen) != PeerClass.REJECTED }
-        assertFailsWith<CertificateException> { manager.checkClientTrusted(arrayOf(stranger), "EC") }
-        windowOpen = true
-        manager.checkClientTrusted(arrayOf(stranger), "EC")
+        assertEquals(PeerClass.TRUSTED, classifyPeer(TestCerts.PARENT_ID, trusted))
+        assertEquals(PeerClass.PAIRING, classifyPeer(TestCerts.STRANGER_ID, trusted))
+        assertEquals(PeerClass.PAIRING, classifyPeer(TestCerts.PARENT_ID, emptySet()))
     }
 }

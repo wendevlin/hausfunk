@@ -3,6 +3,7 @@ package dev.wendelin.hausfunk.data
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.core.DataStoreFactory
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.dataStoreFile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
@@ -11,6 +12,8 @@ import kotlinx.coroutines.flow.map
 class TrustStoreRepository(context: Context, scope: CoroutineScope) {
     private val store: DataStore<TrustStore> = DataStoreFactory.create(
         serializer = JsonSerializer(TrustStore.serializer(), TrustStore()),
+        // An unreadable file must not stop the app from starting; empty trusts nobody.
+        corruptionHandler = ReplaceFileCorruptionHandler { TrustStore() },
         scope = scope,
         produceFile = { context.dataStoreFile("trust_store.json") },
     )

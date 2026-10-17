@@ -130,4 +130,5 @@
     <string name="watch_gate_closed">Sound muted below the threshold</string>
     <string name="crash_title">The app crashed last time</string>
     <string name="action_copy">Copy</string>
+    <string name="permissions_missing_parent">Hausfunk needs access to the local network to find the baby device. Allow it to continue.</string>
 </resources>

@@ -149,7 +149,7 @@ fun HausfunkNavHost(app: HausfunkApplication) {
         composable(Routes.PARENT) {
             ParentRoute(
                 app = app,
-                deviceName = loaded.deviceName,
+                settings = loaded,
                 trusted = trusted,
                 onBack = {
                     if (!navController.popBackStack()) {

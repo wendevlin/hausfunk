@@ -27,9 +27,16 @@ Implemented in `signaling/TlsTransport.kt`; trust decisions in `identity/TlsKeys
 - Trust: a certificate is accepted if and only if its SHA-256 fingerprint is in the trust store.
   Validity dates, chains and hostnames are ignored. The parent additionally requires the
   fingerprint to equal the device ID of the baby it meant to connect to.
-- The baby classifies each client after the handshake: `TRUSTED` if pinned, else `PAIRING`.
-  A `PAIRING` connection only ever reaches the pairing exchange, never signaling. One at a time;
-  a device whose attempt failed is refused for 60 s.
+- The baby lets any client certificate complete the handshake (anyone may ask to pair) and
+  classifies it afterwards: `TRUSTED` if pinned, else `PAIRING`. Every connection then sends its
+  first message, read within 15 s of the TCP accept (handshake included):
+  - `pair_commit` starts the pairing exchange (also from a trusted device that wants to pair
+    again);
+  - `hello` from a `TRUSTED` device that is still in the trust store starts signaling;
+  - `hello` from any other device is answered with `unpair` (see Signaling);
+  - anything else closes the connection.
+- A `PAIRING` connection only ever reaches the pairing exchange, never signaling. One pairing at
+  a time; after a failed attempt no device can pair for 10 s and that device not for 60 s.
 - The identity key signs TLS handshakes inside the Keystore (purposes SIGN/VERIFY, digests
   SHA-256 and NONE; the platform hands TLS signatures to the Keystore as raw digests).
 - Limits: connect/handshake timeout 10 s, at most 8 concurrent connections on the baby, at most 1
@@ -49,9 +56,9 @@ Messages: `pair_commit { commitment }`, `pair_reveal { nonce, deviceId, name }`,
 `PairingProtocol.kt`, emoji table in `SasEmoji.kt` from `@matrix-org/spec` 1.16.0).
 
 1. The parent lists every `_babyphone._tcp` service; the user taps one that is not paired.
-   (Changed from the plan's 120 s pairing window, see DECISIONS.) While open, its server trust
-   manager accepts one unknown client certificate; the connection is classified `PAIRING` and
-   handled only by the pairing handler.
+   (Changed from the plan's 120 s pairing window, see DECISIONS.) The baby takes the connection
+   as described under Transport; its first message `pair_commit` routes it to the pairing
+   handler.
 2. Parent picks the advertised baby and connects with a one-connection trust manager that accepts
    and records any server certificate.
 3. `fpP`, `fpB`: SHA-256 fingerprints (32 bytes) of parent and baby certificates from the TLS session.
@@ -103,15 +110,6 @@ peer whose certificate the receiver trusts (the baby's side).
 - The signaling socket lives as long as the peer connection; its close counts as connection loss.
 - Reconnect is always a full teardown and a fresh TLS connection and `PeerConnection`.
 
-## Data channel `control` (ordered, reliable, created by the baby)
-
-| Message | Direction | Content |
-| --- | --- | --- |
-| `watching` | parent → baby | boolean |
-| `status` | baby → parent | `battery` (%), `charging`, `parents` (count), `thermalReduced`; every 30 s and on change |
-| `level` | baby → parent | `dbfs`, 5 times per second |
-| `ping` / `pong` | parent → baby / baby → parent | every 2 s; 6 s without one means the link is lost |
-
 ## Data channel
 
 One ordered, reliable data channel named `control`, created by the baby. Each message is one
@@ -127,8 +125,12 @@ malformed ones dropped (logged once per connection).
 
 Liveness and reconnection:
 
+- The link counts as up only when the first `pong` arrives (not when ICE connects): only then is
+  the parent "connected" and a running alarm stops.
 - The parent counts the link as lost after 6 s without `pong`, on ICE `disconnected`/`failed`,
   when the signaling socket closes, or if no `pong` arrived within 20 s of starting the attempt.
+- Pairing connections have no read timeout (waiting for the other user may take long); the
+  exchange's own 120 s limit ends them.
 - The baby drops a parent after 6 s without `ping` (15 s allowed for setup after the `answer`).
 - The parent reconnects on its own with a full new connection: first to the address that last
   worked (3 s connect timeout) if discovery now reports a different one, then to the discovered

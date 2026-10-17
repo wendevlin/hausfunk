@@ -23,7 +23,6 @@ import kotlinx.coroutines.launch
  */
 class BabyService : Service() {
     private val app get() = application as HausfunkApplication
-    private var session: BabySession? = null
     private var job: Job? = null
     private val locks by lazy { Locks(this, "baby") }
 
@@ -34,7 +33,7 @@ class BabyService : Service() {
             stopMonitoring()
             return START_NOT_STICKY
         }
-        if (session != null || job != null) return START_NOT_STICKY
+        if (job != null) return START_NOT_STICKY
         // One role at a time: a device that becomes the baby stops listening as a parent (and
         // can never ring the parents' connection alarm).
         if (ParentService.running) ParentService.stop(this)
@@ -55,6 +54,8 @@ class BabyService : Service() {
             val identity = app.identity.await()
             app.trustedIds.filterNotNull().first() // pinning needs the stored pairings
             val name = app.settings.current().deviceName
+            // The job owns the session: however it ends (Stop while still starting included),
+            // the session is stopped with it.
             val s = BabySession(
                 this@BabyService,
                 identity,
@@ -62,10 +63,14 @@ class BabyService : Service() {
                 onPaired = { app.storePaired(it, Role.PARENT) },
                 onUnpaired = app::forgetUnpaired,
             )
-            session = s
-            app.babySession.value = s
-            s.start(name, appVersion(this@BabyService))
-            app.trustedIds.filterNotNull().collect { s.onTrustChanged(it) }
+            try {
+                app.babySession.value = s
+                s.start(name, appVersion(this@BabyService))
+                app.trustedIds.filterNotNull().collect { s.onTrustChanged(it) }
+            } finally {
+                s.stop()
+                app.babySession.compareAndSet(s, null)
+            }
         }
         // A camera service cannot be restarted from the background; the parents' alarm covers it.
         return START_NOT_STICKY
@@ -86,10 +91,8 @@ class BabyService : Service() {
     }
 
     private fun stopMonitoring() {
-        job?.cancel()
+        job?.cancel() // stops the session
         job = null
-        session?.stop()
-        session = null
         app.babySession.value = null
         locks.release()
         stopForeground(STOP_FOREGROUND_REMOVE)

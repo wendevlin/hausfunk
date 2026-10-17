@@ -33,7 +33,7 @@ class BabyAdvertiser(context: Context) {
         check(listener == null) { "already advertising" }
         val info = NsdServiceInfo().apply {
             // The service name is shown to parents; NSD appends " (2)" on a clash.
-            serviceName = DeviceName.sanitize(name).ifBlank { "Hausfunk" }
+            serviceName = DeviceName.serviceName(name)
             serviceType = SERVICE_TYPE
             this.port = port
             setAttribute("id", deviceId)
@@ -79,9 +79,13 @@ class BabyFinder(context: Context) {
     private var listener: NsdManager.DiscoveryListener? = null
     private var users = 0
 
+    /** Services found and not lost since; a resolve that finishes late for any other is ignored. */
+    private val found = mutableSetOf<String>()
+
     fun start() = executor.execute {
         users++
-        if (users == 1) startDiscovery()
+        // Also retries a discovery that failed to start for an earlier user.
+        if (listener == null) startDiscovery()
     }
 
     fun stop() = executor.execute {
@@ -108,9 +112,12 @@ class BabyFinder(context: Context) {
             override fun onDiscoveryStarted(serviceType: String) = Unit
             override fun onDiscoveryStopped(serviceType: String) = Unit
             override fun onServiceFound(info: NsdServiceInfo) = executor.execute {
-                if (listener === this) resolver.start(info, ::onResolved)
+                if (listener !== this) return@execute
+                found += info.serviceName
+                resolver.start(info, ::onResolved)
             }
             override fun onServiceLost(info: NsdServiceInfo) = executor.execute {
+                found -= info.serviceName
                 resolver.stop(info.serviceName)
                 if (byService.remove(info.serviceName) != null) publish()
             }
@@ -128,12 +135,13 @@ class BabyFinder(context: Context) {
             // Discovery had failed to start.
         }
         resolver.stopAll()
+        found.clear()
         byService.clear()
         publish()
     }
 
     private fun onResolved(info: NsdServiceInfo) {
-        if (listener == null) return
+        if (listener == null || info.serviceName !in found) return
         val id = info.attributes["id"]?.toString(Charsets.UTF_8)
         val version = info.attributes["v"]?.toString(Charsets.UTF_8)
         val address = info.addressesCompat().firstOrNull()

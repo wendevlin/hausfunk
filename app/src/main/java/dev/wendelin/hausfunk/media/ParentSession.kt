@@ -1,9 +1,6 @@
 package dev.wendelin.hausfunk.media
 
 import android.content.Context
-import android.media.AudioAttributes
-import android.media.AudioFocusRequest
-import android.media.AudioManager
 import android.os.SystemClock
 import android.util.Log
 import dev.wendelin.hausfunk.data.SoundPrefs
@@ -45,27 +42,13 @@ import org.webrtc.IceCandidate
 import org.webrtc.MediaConstraints
 import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
-import org.webrtc.RTCStatsReport
 import org.webrtc.RtpTransceiver
 import org.webrtc.SessionDescription
 import org.webrtc.VideoSink
 import org.webrtc.VideoTrack
-import org.webrtc.audio.JavaAudioDeviceModule
-
-/** What actually arrives, for the debug overlay: resolution, frame rate, data rate, codec. */
-data class VideoStats(val width: Int, val height: Int, val fps: Double, val kbps: Int, val codec: String)
 
 /** The baby device's battery, from its last status message. */
 data class BabyStatus(val battery: Int, val charging: Boolean)
-
-/** The connection-loss alarm. */
-enum class AlarmState {
-    OFF,
-    RINGING,
-
-    /** The parent silenced it; the link is still down. */
-    ACKNOWLEDGED,
-}
 
 sealed interface ParentState {
     /** The baby this state is about; null while idle. */
@@ -77,23 +60,25 @@ sealed interface ParentState {
 
     data object Idle : ParentState
 
-    /** Trying to reach a baby that has not been connected yet in this watch. Retries on its own. */
+    /** Trying to reach a baby that has not answered yet in this watch. Retries on its own. */
     data class Connecting(override val baby: FoundBaby) : WithBaby
+
+    /** The baby answers end to end (pongs arrive). */
     data class Connected(override val baby: FoundBaby) : WithBaby
 
     /** The baby device already serves another parent; retried every few seconds. */
     data class Busy(override val baby: FoundBaby) : WithBaby
 
-    /** Was connected and lost the link at [since] (elapsed ms); reconnecting on its own. */
-    data class Reconnecting(override val baby: FoundBaby, val since: Long) : WithBaby
+    /** Was connected and lost the link; reconnecting on its own, the alarm may ring. */
+    data class Reconnecting(override val baby: FoundBaby) : WithBaby
 }
 
 /**
  * Parent side: receives one baby device's audio and video. Audio plays as media; video goes to
- * the sinks attached with [attach]. Once connected, a lost link is retried on its own (last
- * address first, then what discovery resolves, with backoff), and the alarm rings if it stays
- * lost for the grace period. All WebRTC objects are touched only on the session's own thread.
- * [release] is final.
+ * the sinks attached with [attach]. A link counts as up only once the baby answers pings; a lost
+ * link is retried on its own (last address first, then what discovery resolves, with backoff),
+ * and [LossAlarm] decides when the alarm rings. All WebRTC objects are touched only on the
+ * session's own thread. [release] is final.
  */
 class ParentSession(
     context: Context,
@@ -109,17 +94,16 @@ class ParentSession(
     private val transport = TlsTransport(identity, trustedIds)
     private val context = context.applicationContext
     private val executor = SerialExecutor("parent-session")
+    private val audio = ParentAudio(this.context)
+
     private val _state = MutableStateFlow<ParentState>(ParentState.Idle)
     val state: StateFlow<ParentState> = _state.asStateFlow()
+    private val _alarm = MutableStateFlow(AlarmState.OFF)
+    val alarm: StateFlow<AlarmState> = _alarm.asStateFlow()
     private val _videoStats = MutableStateFlow<VideoStats?>(null)
 
     /** Measured every 2 s while connected; null otherwise. */
     val videoStats: StateFlow<VideoStats?> = _videoStats.asStateFlow()
-    private var lastBytes = 0L
-    private var lastStatsUs = 0.0
-
-    private val _alarm = MutableStateFlow(AlarmState.OFF)
-    val alarm: StateFlow<AlarmState> = _alarm.asStateFlow()
     private val _status = MutableStateFlow<BabyStatus?>(null)
 
     /** The baby's battery; null until its first status message on this connection. */
@@ -141,24 +125,12 @@ class ParentSession(
     /** False while the noise gate mutes the sound (only with "only above threshold" on). */
     val gateOpen: StateFlow<Boolean> = _gateOpen.asStateFlow()
 
-    /** The networks changed since the factory was made; rebuilt before the next attempt. */
-    private var networkChanged = false
-
     /** Shared with the renderers so they can draw frames decoded here. */
     val eglBase: EglBase = EglBase.create()
-    private val audioManager = this.context.getSystemService(AudioManager::class.java)
-    private val mediaAttributes = AudioAttributes.Builder()
-        .setUsage(AudioAttributes.USAGE_MEDIA)
-        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-        .build()
-    // A baby monitor never pauses itself, so focus changes are ignored.
-    private val focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-        .setAudioAttributes(mediaAttributes)
-        .setOnAudioFocusChangeListener { }
-        .build()
-
-    private var audioModule: JavaAudioDeviceModule? = null
     private var factory: PeerConnectionFactory? = null
+
+    /** The networks changed since the factory was made; rebuilt before the next attempt. */
+    private var networkChanged = false
     @Volatile private var link: Link? = null
     private val sinks = mutableSetOf<VideoSink>()
     private var released = false
@@ -166,50 +138,44 @@ class ParentSession(
     /** The baby being watched, with the address that last worked; null while idle. */
     private var target: FoundBaby? = null
     private lateinit var ownHello: Hello
-    private var everConnected = false
-    private var lostSince: Long? = null
     private val backoff = Backoff()
     private var retry: Future<*>? = null
-    private var alarmTimer: Future<*>? = null
-    private var graceMs = DEFAULT_GRACE_MS
+    private val lossAlarm = LossAlarm()
+    private var alarmCheck: Future<*>? = null
     private val detector = SoundDetector()
 
     /**
      * Starts watching [baby], replacing whatever was watched. [resume] treats it as a connection
      * that already existed (the service was restarted), so the alarm covers it from the start.
      */
-    fun connect(baby: FoundBaby, ownHello: Hello, resume: Boolean = false) = executor.execute {
+    fun connect(baby: FoundBaby, ownHello: Hello, graceMs: Long, resume: Boolean = false) = executor.execute {
         if (released) return@execute
-        link?.let { close(it, sendBye = true) }
-        cancelTimers()
+        endWatch()
         this.ownHello = ownHello
         target = baby
-        everConnected = resume
-        lostSince = null
         backoff.reset()
         detector.reset()
         applyGate()
-        _lastSound.value = null
-        _status.value = null
-        _alarm.value = AlarmState.OFF
-        audioManager.requestAudioFocus(focusRequest)
-        if (resume) markLost(baby) else _state.value = ParentState.Connecting(baby)
+        lossAlarm.graceMs = graceMs
+        lossAlarm.reset(resume)
+        audio.requestFocus()
+        _state.value = if (resume) ParentState.Reconnecting(baby) else ParentState.Connecting(baby)
+        if (resume) linkDown()
         attempt()
     }
 
-    fun disconnect() = executor.execute { stopWatching() }
-
     fun release() = executor.execute {
         if (released) return@execute
-        stopWatching()
         released = true
+        endWatch()
+        _state.value = ParentState.Idle
         factory?.dispose()
-        audioModule?.release()
+        audio.releaseModule()
         eglBase.release()
         executor.shutdown()
     }
 
-    /** Tries again right away, e.g. after the Wi-Fi came back or on "Retry". */
+    /** Tries again right away, e.g. on "Retry". */
     fun retryNow() = executor.execute {
         if (target == null || link != null) return@execute
         backoff.reset()
@@ -234,10 +200,14 @@ class ParentSession(
 
     /** Silences the alarm until the link is back and lost again. */
     fun acknowledgeAlarm() = executor.execute {
-        if (_alarm.value == AlarmState.RINGING) _alarm.value = AlarmState.ACKNOWLEDGED
+        lossAlarm.acknowledge()
+        publishAlarm()
     }
 
-    fun setGracePeriod(millis: Long) = executor.execute { graceMs = millis }
+    fun setGracePeriod(millis: Long) = executor.execute {
+        lossAlarm.graceMs = millis
+        scheduleAlarmCheck()
+    }
 
     fun setSoundPrefs(prefs: SoundPrefs) = executor.execute {
         detector.thresholdDbfs = prefs.thresholdDbfs
@@ -246,18 +216,13 @@ class ParentSession(
         applyGate()
     }
 
-    /** Call whenever the trust store changes: a removed baby is told so and disconnected at once. */
-    fun onTrustChanged(ids: Set<String>) = executor.execute {
-        val t = target ?: return@execute
-        if (t.deviceId in ids) return@execute
-        link?.let { l ->
-            try {
-                l.connection?.send(Unpair)
-            } catch (e: IOException) {
-                // It learns on its next connection instead.
-            }
+    /** The user removed this baby: tell it, if connected, so it forgets us too. */
+    fun sendUnpair() = executor.execute {
+        try {
+            link?.connection?.send(Unpair)
+        } catch (e: IOException) {
+            // It learns on its next connection instead.
         }
-        stopWatching()
     }
 
     /** Shows the video in [sink] while connected. Safe to call from any thread. */
@@ -269,40 +234,35 @@ class ParentSession(
         if (sinks.remove(sink)) link?.videoTrack?.removeSink(sink)
     }
 
-    private fun stopWatching() {
-        link?.let { close(it, sendBye = true) }
-        cancelTimers()
-        if (target != null) audioManager.abandonAudioFocusRequest(focusRequest)
+    /** Ends the current watch, if any, without reconnecting or alarming. */
+    private fun endWatch() {
+        // No target first, so closing the link does not count as a loss.
         target = null
-        _alarm.value = AlarmState.OFF
-        _gateOpen.value = true
-        audioModule?.setSpeakerMute(false)
-        _state.value = ParentState.Idle
-    }
-
-    private fun cancelTimers() {
+        link?.let { close(it, sendBye = true) }
         retry?.cancel(false)
         retry = null
-        alarmTimer?.cancel(false)
-        alarmTimer = null
+        alarmCheck?.cancel(false)
+        alarmCheck = null
+        lossAlarm.stop()
+        publishAlarm()
+        audio.abandonFocus()
+        _gateOpen.value = true
+        audio.setMuted(false)
+        _lastSound.value = null
+        _status.value = null
     }
 
     private fun factory(): PeerConnectionFactory = factory ?: run {
         WebRtc.initialize(context)
-        val module = JavaAudioDeviceModule.builder(context)
-            .setAudioAttributes(mediaAttributes)
-            .createAudioDeviceModule()
-        module.setSpeakerMute(!_gateOpen.value)
-        audioModule = module
         PeerConnectionFactory.builder()
-            .setAudioDeviceModule(module)
+            .setAudioDeviceModule(audio.createModule())
             .setVideoEncoderFactory(DefaultVideoEncoderFactory(eglBase.eglBaseContext, true, true))
             .setVideoDecoderFactory(DefaultVideoDecoderFactory(eglBase.eglBaseContext))
             .createPeerConnectionFactory()
             .also { factory = it }
     }
 
-    /** One connection attempt; [onDown] schedules the next if it fails. */
+    /** One connection attempt; [linkDown] schedules the next if it fails. */
     private fun attempt() {
         val t = target ?: return
         retry?.cancel(false)
@@ -311,8 +271,7 @@ class ParentSession(
             networkChanged = false
             factory?.dispose()
             factory = null
-            audioModule?.release()
-            audioModule = null
+            audio.releaseModule()
         }
         val l = Link(t)
         link = l
@@ -326,7 +285,12 @@ class ParentSession(
         try {
             val connection = open(l)
             l.connection = connection
-            executor.execute { if (link !== l) connection.close() }
+            // Watching ended or moved on while connecting (also after release, when the
+            // executor no longer runs anything): never greet the baby from a stale link.
+            if (link !== l) {
+                connection.close()
+                return
+            }
             connection.send(ownHello)
             while (true) {
                 val message = connection.receive() ?: break
@@ -369,7 +333,8 @@ class ParentSession(
             Unpair -> {
                 // Authentic: it came over the connection pinned to this baby's certificate.
                 val baby = l.baby
-                stopWatching()
+                endWatch()
+                _state.value = ParentState.Idle
                 onUnpaired(baby)
             }
             else -> fail(l, "unexpected ${message.javaClass.simpleName}")
@@ -407,15 +372,11 @@ class ParentSession(
         }
 
         override fun onTrack(transceiver: RtpTransceiver) = executor.execute {
+            val track = transceiver.receiver.track() as? VideoTrack ?: return@execute
             if (link !== l) return@execute
-            when (val track = transceiver.receiver.track()) {
-                is VideoTrack -> {
-                    l.videoTrack = track
-                    track.addSink(l.frameWatch)
-                    sinks.forEach(track::addSink)
-                }
-                else -> Unit
-            }
+            l.videoTrack = track
+            track.addSink(l.frameWatch)
+            sinks.forEach(track::addSink)
         }
 
         override fun onDataChannel(channel: DataChannel) = executor.execute {
@@ -427,27 +388,24 @@ class ParentSession(
 
         override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) = executor.execute {
             if (link !== l) return@execute
-            when (state) {
-                PeerConnection.IceConnectionState.CONNECTED,
-                PeerConnection.IceConnectionState.COMPLETED,
-                -> onConnected(l)
-                PeerConnection.IceConnectionState.FAILED,
-                PeerConnection.IceConnectionState.DISCONNECTED,
-                -> close(l, sendBye = true)
-                else -> Unit
+            // Up only counts with pongs (see onControl); a broken ICE path is a loss right away.
+            if (state == PeerConnection.IceConnectionState.FAILED ||
+                state == PeerConnection.IceConnectionState.DISCONNECTED
+            ) {
+                close(l, sendBye = true)
             }
         }
     }
 
-    private fun onConnected(l: Link) {
-        if (_state.value is ParentState.Connected) return
+    /** The first pong of [l]: the baby answers end to end. */
+    private fun onUp(l: Link) {
+        l.alive = true
         target = l.baby // the address that worked is tried first next time
-        everConnected = true
-        lostSince = null
-        alarmTimer?.cancel(false)
-        alarmTimer = null
-        _alarm.value = AlarmState.OFF
         backoff.reset()
+        lossAlarm.onUp()
+        alarmCheck?.cancel(false)
+        alarmCheck = null
+        publishAlarm()
         _state.value = ParentState.Connected(l.baby)
         pollStats(l)
     }
@@ -472,7 +430,7 @@ class ParentSession(
             is Decoded.Message -> when (val message = decoded.message) {
                 Pong -> {
                     l.lastPong = now
-                    l.alive = true
+                    if (!l.alive) onUp(l)
                 }
                 is Status -> _status.value = BabyStatus(message.battery.coerceIn(-1, 100), message.charging)
                 is Level -> {
@@ -514,44 +472,19 @@ class ParentSession(
         channel.send(DataChannel.Buffer(ByteBuffer.wrap(bytes), false))
     }
 
-    /**
-     * Mutes playback below the threshold when the gate is on; re-checked with every level. Mutes
-     * the audio output itself, which is certain to be silent, rather than the remote track.
-     */
+    /** Mutes playback below the threshold when the gate is on; re-checked with every level. */
     private fun applyGate() {
         val open = detector.gateOpen(SystemClock.elapsedRealtime())
         if (open == _gateOpen.value) return
         _gateOpen.value = open
-        audioModule?.setSpeakerMute(!open)
+        audio.setMuted(!open)
     }
 
     private fun pollStats(l: Link) {
         val pc = l.pc ?: return
         if (link !== l) return
-        pc.getStats { report -> executor.execute { if (link === l) onStats(report) } }
+        pc.getStats { report -> executor.execute { if (link === l) l.stats.read(report)?.let { _videoStats.value = it } } }
         executor.schedule(STATS_INTERVAL_MS) { pollStats(l) }
-    }
-
-    private fun onStats(report: RTCStatsReport) {
-        val stats = report.statsMap.values
-        val inbound = stats.firstOrNull { it.type == "inbound-rtp" && it.members["kind"] == "video" } ?: return
-        val m = inbound.members
-        val bytes = (m["bytesReceived"] as? Number)?.toLong() ?: 0L
-        val kbps = if (lastStatsUs > 0 && inbound.timestampUs > lastStatsUs) {
-            ((bytes - lastBytes) * 8 * 1000 / (inbound.timestampUs - lastStatsUs)).toInt()
-        } else {
-            0
-        }
-        lastBytes = bytes
-        lastStatsUs = inbound.timestampUs
-        val codec = stats.firstOrNull { it.id == m["codecId"] }?.members?.get("mimeType") as? String
-        _videoStats.value = VideoStats(
-            width = (m["frameWidth"] as? Number)?.toInt() ?: 0,
-            height = (m["frameHeight"] as? Number)?.toInt() ?: 0,
-            fps = (m["framesPerSecond"] as? Number)?.toDouble() ?: 0.0,
-            kbps = kbps,
-            codec = codec?.substringAfter('/') ?: "?",
-        )
     }
 
     private fun send(l: Link, message: SignalingMessage) {
@@ -567,7 +500,7 @@ class ParentSession(
         if (link === l) close(l, sendBye = true)
     }
 
-    /** Ends [l]; while still watching, the next attempt is scheduled. */
+    /** Ends [l]; while still watching, it counts as down and the next attempt is scheduled. */
     private fun close(l: Link, sendBye: Boolean, busy: Boolean = false) {
         if (link !== l) return
         link = null
@@ -584,44 +517,49 @@ class ParentSession(
             track.removeSink(l.frameWatch)
             sinks.forEach(track::removeSink)
         }
-        _videoArriving.value = false
         l.videoTrack = null
         l.control?.unregisterObserver()
         l.control?.dispose()
         l.control = null
         l.pc?.dispose()
         l.pc = null
+        _videoArriving.value = false
         _videoStats.value = null
         _level.value = null
-        lastBytes = 0L
-        lastStatsUs = 0.0
-        onDown(busy)
-    }
-
-    private fun onDown(busy: Boolean) {
         val t = target ?: return
-        when {
-            everConnected -> markLost(t)
-            busy -> _state.value = ParentState.Busy(t)
-            else -> _state.value = ParentState.Connecting(t)
+        val wasUp = l.alive || _state.value is ParentState.Reconnecting
+        _state.value = when {
+            wasUp -> ParentState.Reconnecting(t)
+            busy -> ParentState.Busy(t)
+            else -> ParentState.Connecting(t)
         }
+        if (wasUp) _status.value = null
+        linkDown()
         retry = executor.schedule(if (busy) BUSY_RETRY_MS else backoff.next()) {
             retry = null
             if (link == null) attempt()
         }
     }
 
-    /** The link is down after having been up: reconnect, and ring after the grace period. */
-    private fun markLost(t: FoundBaby) {
-        val since = lostSince ?: SystemClock.elapsedRealtime().also { lostSince = it }
-        _status.value = null
-        _state.value = ParentState.Reconnecting(t, since)
-        if (alarmTimer == null && _alarm.value == AlarmState.OFF) {
-            alarmTimer = executor.schedule(graceMs) {
-                alarmTimer = null
-                if (lostSince != null && _alarm.value == AlarmState.OFF) _alarm.value = AlarmState.RINGING
-            }
+    /** The link is down now: the alarm rings if it stays down for the grace period. */
+    private fun linkDown() {
+        lossAlarm.onDown(SystemClock.elapsedRealtime())
+        scheduleAlarmCheck()
+    }
+
+    private fun scheduleAlarmCheck() {
+        alarmCheck?.cancel(false)
+        alarmCheck = null
+        val due = lossAlarm.dueIn(SystemClock.elapsedRealtime()) ?: return
+        alarmCheck = executor.schedule(due) {
+            alarmCheck = null
+            lossAlarm.check(SystemClock.elapsedRealtime())
+            publishAlarm()
         }
+    }
+
+    private fun publishAlarm() {
+        _alarm.value = lossAlarm.state
     }
 
     private inner class Link(@Volatile var baby: FoundBaby) {
@@ -633,6 +571,7 @@ class ParentSession(
         var videoTrack: VideoTrack? = null
         var control: DataChannel? = null
         val ice = PendingIce()
+        val stats = VideoStatsMeter()
         var pinging = false
         var lastPong = 0L
 
@@ -649,6 +588,5 @@ class ParentSession(
         const val SETUP_TIMEOUT_MS = 20_000L
         const val FAST_CONNECT_TIMEOUT_MS = 3_000
         const val BUSY_RETRY_MS = 10_000L
-        const val DEFAULT_GRACE_MS = 15_000L
     }
 }

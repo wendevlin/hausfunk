@@ -123,3 +123,70 @@ class SoundDetectorTest {
         assertEquals(200L, d.lastSoundAt)
     }
 }
+
+class LossAlarmTest {
+    @Test
+    fun noAlarmBeforeTheFirstWorkingLink() {
+        val a = LossAlarm()
+        a.reset(resume = false)
+        a.onDown(0)
+        assertNull(a.dueIn(0))
+        a.check(60_000)
+        assertEquals(AlarmState.OFF, a.state)
+    }
+
+    @Test
+    fun ringsAfterTheGracePeriodAndStopsWhenUp() {
+        val a = LossAlarm().apply { graceMs = 15_000 }
+        a.reset(resume = false)
+        a.onUp()
+        a.onDown(1_000)
+        a.onDown(5_000) // a retry failing again keeps the first loss time
+        assertEquals(15_000L, a.dueIn(1_000))
+        a.check(15_999)
+        assertEquals(AlarmState.OFF, a.state)
+        a.check(16_000)
+        assertEquals(AlarmState.RINGING, a.state)
+        a.onUp()
+        assertEquals(AlarmState.OFF, a.state)
+        assertNull(a.dueIn(20_000))
+    }
+
+    @Test
+    fun acknowledgeSilencesUntilTheNextLoss() {
+        val a = LossAlarm().apply { graceMs = 5_000 }
+        a.reset(resume = true) // resumed: a loss counts at once
+        a.onDown(0)
+        a.check(5_000)
+        a.acknowledge()
+        assertEquals(AlarmState.ACKNOWLEDGED, a.state)
+        a.check(60_000)
+        assertEquals(AlarmState.ACKNOWLEDGED, a.state)
+        a.onUp()
+        a.onDown(70_000)
+        a.check(75_000)
+        assertEquals(AlarmState.RINGING, a.state)
+    }
+
+    @Test
+    fun aLongerGraceDelaysAPendingAlarm() {
+        val a = LossAlarm().apply { graceMs = 5_000 }
+        a.reset(resume = true)
+        a.onDown(0)
+        a.graceMs = 60_000
+        assertEquals(55_000L, a.dueIn(5_000))
+        a.check(5_000)
+        assertEquals(AlarmState.OFF, a.state)
+    }
+
+    @Test
+    fun stopDisarms() {
+        val a = LossAlarm()
+        a.reset(resume = true)
+        a.onDown(0)
+        a.stop()
+        a.onDown(1)
+        a.check(100_000)
+        assertEquals(AlarmState.OFF, a.state)
+    }
+}
