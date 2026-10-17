@@ -5,6 +5,7 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.Ringtone
 import android.media.RingtoneManager
+import android.net.Uri
 import android.os.VibrationEffect
 import android.os.VibratorManager
 import android.util.Log
@@ -22,12 +23,15 @@ class ConnectionAlarm(private val context: Context) {
     private val vibrator = context.getSystemService(VibratorManager::class.java).defaultVibrator
     private val notifications = context.getSystemService(NotificationManager::class.java)
 
+    /** The sound chosen in the settings; null (or one that is gone) plays the phone's alarm sound. */
+    var sound: Uri? = null
+
     /** [noLan]: this phone has no Wi-Fi, so the notification names that instead of the baby. */
     fun start(babyName: String, noLan: Boolean) {
         notifications.notify(Notifications.ID_ALARM, Notifications.alarm(context, babyName, noLan))
         if (active) return
         active = true
-        ringtone = sound()?.apply {
+        ringtone = ringtone()?.apply {
             audioAttributes = AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_ALARM)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -48,14 +52,14 @@ class ConnectionAlarm(private val context: Context) {
         notifications.cancel(Notifications.ID_ALARM)
     }
 
-    /** The user's alarm sound; if there is none, any sound the phone has. */
-    private fun sound(): Ringtone? = listOf(
-        RingtoneManager.TYPE_ALARM,
-        RingtoneManager.TYPE_RINGTONE,
-        RingtoneManager.TYPE_NOTIFICATION,
-    ).firstNotNullOfOrNull { type ->
-        RingtoneManager.getDefaultUri(type)?.let { RingtoneManager.getRingtone(context, it) }
-    }
+    /** The chosen sound, else the phone's alarm sound; if there is none, any sound the phone has. */
+    private fun ringtone(): Ringtone? = (
+        listOfNotNull(sound) + listOf(
+            RingtoneManager.TYPE_ALARM,
+            RingtoneManager.TYPE_RINGTONE,
+            RingtoneManager.TYPE_NOTIFICATION,
+        ).mapNotNull { RingtoneManager.getDefaultUri(it) }
+    ).firstNotNullOfOrNull { RingtoneManager.getRingtone(context, it) }
 
     private companion object {
         const val TAG = "ConnectionAlarm"

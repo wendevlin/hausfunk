@@ -5,6 +5,7 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import androidx.core.net.toUri
 import android.content.pm.ServiceInfo
 import android.os.IBinder
 import android.os.SystemClock
@@ -151,6 +152,7 @@ class ParentService : Service() {
         sc.launch {
             combine(app.settings.settings, watched) { settings, baby -> settings to baby }.collect { (settings, baby) ->
                 s.setGracePeriod(settings.alarmGraceSeconds * 1_000L)
+                alarm.sound = settings.alarmSound?.toUri()
                 if (baby != null) s.setSoundPrefs(settings.soundFor(baby.deviceId))
             }
         }

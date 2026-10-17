@@ -167,6 +167,8 @@ fun HausfunkNavHost(app: HausfunkApplication) {
                 alarmGraceSeconds = loaded.alarmGraceSeconds,
                 onBack = { navController.popBackStack() },
                 onAlarmGrace = { seconds -> app.appScope.launch { app.settings.setAlarmGrace(seconds) } },
+                alarmSound = loaded.alarmSound,
+                onAlarmSound = { uri -> app.appScope.launch { app.settings.setAlarmSound(uri) } },
                 onRenameSelf = { name -> app.appScope.launch { app.settings.setDeviceName(name) } },
                 onRenamePeer = { id, name -> app.appScope.launch { app.trustStore.rename(id, name) } },
                 onRemovePeer = { id ->

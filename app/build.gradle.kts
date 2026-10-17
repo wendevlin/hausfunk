@@ -70,6 +70,11 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    androidResources {
+        // Lists English and German for Android 13+'s per-app language setting.
+        generateLocaleConfig = true
+    }
+
     buildFeatures {
         compose = true
         buildConfig = false
@@ -111,6 +116,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.webrtc)
+    implementation(libs.androidx.window)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlin.test)

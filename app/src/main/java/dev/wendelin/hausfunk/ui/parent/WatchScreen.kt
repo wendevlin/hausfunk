@@ -48,6 +48,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import dev.wendelin.hausfunk.ui.common.VideoView
 import dev.wendelin.hausfunk.ui.common.Zoom
+import dev.wendelin.hausfunk.ui.common.rememberHalfOpenFoldTop
+import androidx.compose.foundation.layout.height
 import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -99,6 +101,10 @@ fun WatchScreen(
     val history by session.soundHistory.collectAsState()
     var soundSettings by rememberSaveable { mutableStateOf(false) }
     ShowOverLockScreen(alarm == AlarmState.RINGING)
+    // Galaxy Flip standing half open: the video above the fold, sound and status below it.
+    val foldTop = if (inPip) null else rememberHalfOpenFoldTop()
+    val upperArea = if (foldTop != null) Alignment.TopCenter else Alignment.Center
+    val upperPadding = Modifier.padding(top = (foldTop ?: 0.dp) / 4)
     Box(
         Modifier
             .fillMaxSize()
@@ -120,7 +126,7 @@ fun WatchScreen(
                 session.eglBase,
                 session::attach,
                 session::detach,
-                Modifier.fillMaxSize(),
+                if (foldTop != null) Modifier.fillMaxWidth().height(foldTop) else Modifier.fillMaxSize(),
                 onAspectRatio = onAspectRatio,
                 onBounds = onVideoBounds,
                 zoom = zoom,
@@ -195,7 +201,7 @@ fun WatchScreen(
                 noLan = noLan,
                 ringing = alarm == AlarmState.RINGING,
                 onAcknowledge = session::acknowledgeAlarm,
-                modifier = Modifier.align(Alignment.Center),
+                modifier = Modifier.align(upperArea).then(upperPadding),
             )
         } else {
             val message = when (state) {
@@ -209,7 +215,8 @@ fun WatchScreen(
             if (message != null) {
                 Column(
                     Modifier
-                        .align(Alignment.Center)
+                        .align(upperArea)
+                        .then(upperPadding)
                         .padding(24.dp)
                         .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
                         .padding(16.dp),

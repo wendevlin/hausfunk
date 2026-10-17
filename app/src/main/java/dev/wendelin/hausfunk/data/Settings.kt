@@ -13,6 +13,8 @@ data class Settings(
     val identityResetNotice: Boolean = false,
     /** Parent: how long a lost connection may stay lost before the alarm sounds. */
     val alarmGraceSeconds: Int = DEFAULT_ALARM_GRACE_SECONDS,
+    /** Parent: the sound the alarm plays (a content URI); null for the phone's alarm sound. */
+    val alarmSound: String? = null,
     /** Parent: noise threshold and gate per baby device ID. */
     val sound: Map<String, SoundPrefs> = emptyMap(),
 ) {
