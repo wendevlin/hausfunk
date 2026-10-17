@@ -4,6 +4,8 @@ import android.content.Context
 import android.media.AudioManager
 import android.media.MediaRecorder
 import android.util.Log
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import org.webrtc.AudioSource
 import org.webrtc.AudioTrack
 import org.webrtc.Camera2Enumerator
@@ -106,6 +108,13 @@ class BabyMedia(
 
     private var capturing = false
 
+    /**
+     * Starting and stopping the camera happen here: stopping waits for a camera that is still
+     * opening and could hang, which must never hold up the session (its pongs keep the parents'
+     * alarm quiet).
+     */
+    private val cameraControl = Executors.newSingleThreadExecutor { Thread(it, "camera-control") }
+
     /** Whether the baby's own preview is shown (it needs the camera too). */
     val hasPreview: Boolean get() = previewSinks.isNotEmpty()
 
@@ -114,15 +123,22 @@ class BabyMedia(
         val cam = capturer ?: return
         if (on == capturing) return
         capturing = on
-        if (on) {
-            cam.startCapture(WIDTH, HEIGHT, FPS)
-        } else {
-            try {
-                cam.stopCapture()
-            } catch (e: InterruptedException) {
-                Thread.currentThread().interrupt()
+        cameraControl.execute {
+            if (on) {
+                cam.startCapture(WIDTH, HEIGHT, FPS)
+            } else {
+                try {
+                    cam.stopCapture()
+                } catch (e: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                }
             }
         }
+    }
+
+    /** The camera stopped by itself (error, taken away): the next [setCapturing] opens it again. */
+    fun onCameraStopped() {
+        capturing = false
     }
 
     /** Front and back camera. */
@@ -143,10 +159,19 @@ class BabyMedia(
     /** Releases whatever [start] opened, also after it failed halfway. */
     fun dispose() {
         setCapturing(false)
-        capturer?.dispose()
-        videoTrack?.dispose()
-        videoSource?.dispose()
-        textureHelper?.dispose()
+        // The camera is released after it stopped; a hanging camera is given up on after a while.
+        val camera = cameraControl.submit {
+            capturer?.dispose()
+            videoTrack?.dispose()
+            videoSource?.dispose()
+            textureHelper?.dispose()
+        }
+        try {
+            camera.get(CAMERA_RELEASE_TIMEOUT_S, TimeUnit.SECONDS)
+        } catch (e: Exception) {
+            Log.w(TAG, "camera release did not finish")
+        }
+        cameraControl.shutdown()
         if (::audioTrack.isInitialized) audioTrack.dispose()
         audioSource?.dispose()
         if (::factory.isInitialized) factory.dispose()
@@ -183,6 +208,7 @@ class BabyMedia(
 
     companion object {
         private const val TAG = "BabyMedia"
+        private const val CAMERA_RELEASE_TIMEOUT_S = 5L
 
         // Captured at 1080p; sent at whatever the link and the encoder manage, scaled down
         // automatically.

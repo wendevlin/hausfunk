@@ -261,6 +261,9 @@ Owner's request: review everything, remove leftovers, keep it simple, split what
   starts not watching and tells the baby as soon as the video is visible.
 - **The baby's own preview keeps the camera on**, but only while its screen is really visible
   (started), not while it runs in the background or with "Screen off".
+- **The camera is switched on and off on its own thread**: stopping waits for a camera that is still
+  opening, and the session thread must never wait (its pongs keep the parents' alarm quiet). A
+  camera that stopped by itself (error, taken away) is opened again after 3 s if still wanted.
 - **Paired babies that are online come first in the parent's list**, with a green dot and text;
   offline ones are muted (owner's request).
 

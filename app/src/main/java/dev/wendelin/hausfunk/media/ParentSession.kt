@@ -212,6 +212,8 @@ class ParentSession(
     fun setWatching(visible: Boolean) = executor.execute {
         if (visible == watching) return@execute
         watching = visible
+        // The last frame may be old (the baby sent no video meanwhile): wait for a new one.
+        if (visible) _videoArriving.value = false
         link?.let { sendControl(it, Watching(visible)) }
     }
 

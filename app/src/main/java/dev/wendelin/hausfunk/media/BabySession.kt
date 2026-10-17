@@ -93,6 +93,13 @@ class BabySession(
     val eglBase: EglBase = EglBase.create()
     private val media = BabyMedia(this.context, eglBase) { working ->
         _state.update { it.copy(cameraError = !working) }
+        if (!working) {
+            // The capturer stopped itself; open it again after a moment if it is still wanted.
+            executor.execute {
+                if (mediaOpen) media.onCameraStopped()
+                executor.schedule(CAMERA_RETRY_MS, ::updateCapture)
+            }
+        }
     }
     private var mediaOpen = false
 
@@ -204,7 +211,7 @@ class BabySession(
     }
 
     private fun publishParents() {
-        _state.update { it.copy(parents = peers.values.filter { p -> p.name.isNotEmpty() }.map { p -> p.name }) }
+        _state.update { it.copy(parents = peers.values.map { p -> p.name.ifEmpty { "?" } }) }
     }
 
     private fun failStart(e: Exception) {
@@ -328,7 +335,8 @@ class BabySession(
         if (stopped || connection.peerDeviceId !in trustedIds()) return connection.close()
         // The same parent connecting again (it reconnected or tapped us again) replaces its old
         // connection instead of counting twice.
-        peers[connection.peerDeviceId]?.let { close(it, sendBye = false) }
+        // Quietly: the camera and the others' status stay as they are for the new connection.
+        peers[connection.peerDeviceId]?.let { close(it, sendBye = false, update = false) }
         if (peers.size >= MAX_PARENTS) {
             // Every parent costs an encoder; more would overheat the baby phone.
             thread(name = "baby-busy") {
@@ -410,8 +418,9 @@ class BabySession(
             val video = pc.addTransceiver(track, sendOnly)
             video.setCodecPreferences(media.videoCodecs)
             p.video = video
-            applyWatching(p)
         }
+        // The encoding's `active` is set with the other limits once negotiated (limitVideo).
+        updateCapture()
         p.control = pc.createDataChannel("control", DataChannel.Init().apply { ordered = true })
             .also { it.registerObserver(controlObserver(p, it)) }
         pc.createOffer(
@@ -548,7 +557,7 @@ class BabySession(
         if (isCurrent(p)) close(p, sendBye = true)
     }
 
-    private fun close(p: Peer, sendBye: Boolean) {
+    private fun close(p: Peer, sendBye: Boolean, update: Boolean = true) {
         val wasCurrent = isCurrent(p)
         if (wasCurrent) peers.remove(p.id)
         if (sendBye) {
@@ -565,7 +574,7 @@ class BabySession(
         p.pc?.dispose()
         p.pc = null
         p.video = null
-        if (!wasCurrent) return
+        if (!wasCurrent || !update) return
         publishParents()
         updateCapture()
         peers.values.forEach(::sendStatus)
@@ -598,6 +607,7 @@ class BabySession(
 
         /** Each parent costs one encoder (see docs/PLAN.md, "Media pipeline"). */
         const val MAX_PARENTS = 4
+        const val CAMERA_RETRY_MS = 3_000L
         const val GREETING_TIMEOUT_MS = 15_000L
         const val LEVEL_INTERVAL_MS = 200L
         const val STATUS_INTERVAL_MS = 30_000L
