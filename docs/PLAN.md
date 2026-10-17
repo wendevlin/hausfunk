@@ -346,14 +346,13 @@ Eight phases, each ending in an installable APK that the user tests on two real 
 7. **Polish**: app size (see "App size"), thermal fallback, sound history (R15), alarm settings, camera switch, German strings reviewed, README with install and limitations, edge cases from testing.
    - Galaxy Flip (foldables, owner's request): Flex mode when half folded (`androidx.window` `FoldingFeature`): parent shows the video on the upper half and level, last sound and controls on the lower half; baby stands half folded with the camera on the upright half and its screen off or a small status below the fold. Check the layouts on the Flip's cover screen (small, nearly square window) for both roles. Test on the Flip 7.
 
-8. **Internet watch (owner's request)**: watch the baby when the parent is not at home, through a self-hosted **Hausfunk server**. Off by default; without a server configured the app stays LAN-only exactly as before.
-   - Server (separate component in this repository, e.g. `server/`, one container image): a signaling relay that forwards the existing JSON envelopes between devices that are online, plus a TURN server (coturn) for media when no direct path exists. It never sees media or messages in clear: the devices keep their end-to-end authentication (the pinned certificates from pairing, e.g. mutual TLS tunnelled through the relay) and WebRTC's DTLS-SRTP, so a compromised server can at most drop or delay traffic, never watch or impersonate a device.
-   - Auth: one household account on the server (set up once by the owner, e.g. a password or an admin-created invite). Each device gets its own token (revocable on the server), never the household password itself; TURN uses short-lived credentials issued by the server.
-   - App: "Hausfunk server" in the settings, optional: address plus login. The connection-loss alarm, liveness and reconnection apply over the internet too; the parent shows "via internet" when not on the LAN; the LAN path is always tried first.
-   - **Share without logging in again**: a device that is logged in can hand the server to its paired devices over the existing authenticated LAN connection ("Use this server on Mama's phone too"), which then each request their own device token with a one-time code. Alternatively a QR code with the address and a one-time code. Removing a pairing or logging out revokes that device's token.
-   - Security first: the server address and tokens live in private storage, never in logs; the relay is rate-limited; no third-party services. Document running it at home (e.g. behind the router or on a small VPS) in the README.
-   - The TURN part is the ready-made coturn image, configured, not written; it is what makes mobile data (often behind carrier NAT) work reliably. The README also explains the serverless alternative for people with a VPN to home (WireGuard, Tailscale): the app then reaches the baby by its last known address.
-   - Done when: a parent on mobile data watches the baby at home with sound and video, the alarm rings when the baby goes offline, a second parent gets the server by sharing without typing anything, and a server operator cannot see the stream.
+8. **Watching from outside, over a VPN (owner's request)**: no Hausfunk server. Whoever wants to watch from away sets up a VPN to the home network (WireGuard on the router, Tailscale with a subnet router, …); the phones then reach each other as on the LAN, and the end-to-end security stays exactly as it is.
+   - Remember each paired baby's last working address (and port) persistently, in the settings file next to the trust store, never in the pairing data. Discovery does not cross a VPN.
+   - Paired babies that are not found are still tappable ("Not found · tap to try"); the parent then tries the remembered address, and the usual reconnection and alarm rules apply.
+   - The baby's port stays the same across restarts (a fixed default, chosen again only if taken), so a remembered address keeps working.
+   - The "this phone is not on Wi-Fi" alarm text is not used while a VPN carries the connection.
+   - README: a short guide for WireGuard and Tailscale; the baby phone needs no VPN when the router (or a home device) is the VPN endpoint.
+   - Done when: a parent on mobile data with the VPN on watches the baby at home with sound and video, and the alarm rings when the baby goes offline.
 
 Do not hand the APK to anyone outside the household before phase 3 is done: until then, anyone on the Wi-Fi can watch.
 
@@ -397,7 +396,7 @@ Run the whole checklist on at least one Android 12 or 13 device and one Android 
 
 v1 stays LAN-only and one-way, but nothing in it may block internet use or two-way media later.
 
-**Later goals (not v1)**: WebRTC over the internet through a self-hostable signaling relay and TURN server (now planned as phase 8); two-way audio and video; possibly a browser client.
+**Later goals (not v1)**: watching from outside over the user's own VPN (phase 8; a self-hosted relay/TURN server was considered and dropped as not worth its upkeep); two-way audio and video; possibly a browser client.
 
 **Design rules for v1** (each costs nothing now)
 
@@ -406,7 +405,7 @@ v1 stays LAN-only and one-way, but nothing in it may block internet use or two-w
 - ICE servers are configuration, not constants: v1 uses host candidates only.
 - Media direction is negotiated per transceiver. v1 sets baby `sendonly` and parent `recvonly`; adding a parent camera or microphone later changes only the transceiver directions.
 - Roles are device states, not separate code paths.
-- Pairing data holds device ID, name and certificate only, never IP addresses or network details. The last-known-address cache is runtime state outside the trust store.
+- Pairing data holds device ID, name and certificate only, never IP addresses or network details. The last-known-address cache lives outside the trust store (runtime state until phase 8, then a settings entry).
 
 ## Decisions (formerly open questions)
 
