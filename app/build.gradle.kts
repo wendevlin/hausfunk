@@ -20,8 +20,9 @@ android {
         // Bump both for every release; CI checks that the release tag equals versionName.
         versionCode = 2
         versionName = "0.1.1"
-        // Phones only: x86 and x86_64 would add ~29 MB of libwebrtc for emulators and Chromebooks.
-        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
+        // 64-bit ARM phones only: every phone in the household is arm64. armeabi-v7a would add
+        // ~7 MB of libwebrtc, x86/x86_64 ~29 MB for emulators and Chromebooks.
+        ndk { abiFilters += listOf("arm64-v8a") }
     }
 
     signingConfigs {
@@ -48,9 +49,17 @@ android {
             // Installs next to the release app, with its own data, name and red-ringed icon.
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
+            // Shrunk like the release, so tests run the code that ships (R8 can break things).
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         release {
-            isMinifyEnabled = false
+            // R8 drops unused code (most of material-icons-extended, unused library parts) and
+            // resources; the rules keep what libwebrtc reaches from native code.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             isDebuggable = false
             signingConfig = signingConfigs.findByName("release")
         }
