@@ -106,11 +106,13 @@ object Notifications {
             .build()
 
     /** The connection-loss alarm: full screen where allowed, with "Acknowledge". */
-    fun alarm(context: Context, babyName: String): Notification {
+    fun alarm(context: Context, babyName: String, noLan: Boolean): Notification {
         val builder = NotificationCompat.Builder(context, CHANNEL_ALARM)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(context.getString(R.string.alarm_title, babyName))
-            .setContentText(context.getString(R.string.alarm_body))
+            .setContentTitle(context.getString(if (noLan) R.string.alarm_title_no_lan else R.string.alarm_title, babyName))
+            .setContentText(
+                if (noLan) context.getString(R.string.alarm_body_no_lan, babyName) else context.getString(R.string.alarm_body),
+            )
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setOngoing(true)

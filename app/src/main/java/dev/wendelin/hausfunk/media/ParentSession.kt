@@ -12,6 +12,7 @@ import dev.wendelin.hausfunk.signaling.Ping
 import dev.wendelin.hausfunk.signaling.Pong
 import dev.wendelin.hausfunk.signaling.Status
 import dev.wendelin.hausfunk.signaling.Unpair
+import dev.wendelin.hausfunk.signaling.Watching
 import java.net.InetAddress
 import java.net.Socket
 import java.nio.ByteBuffer
@@ -48,7 +49,7 @@ import org.webrtc.VideoSink
 import org.webrtc.VideoTrack
 
 /** The baby device's battery, from its last status message. */
-data class BabyStatus(val battery: Int, val charging: Boolean)
+data class BabyStatus(val battery: Int, val charging: Boolean, val hot: Boolean = false)
 
 sealed interface ParentState {
     /** The baby this state is about; null while idle. */
@@ -90,6 +91,8 @@ class ParentSession(
     private val bind: (Socket, InetAddress) -> Unit,
     /** The baby said it no longer trusts us (it removed the pairing). Watching has ended. */
     private val onUnpaired: (FoundBaby) -> Unit,
+    /** Whether this phone is on any local network; tells the alarm whose side the problem is. */
+    private val hasLan: () -> Boolean,
 ) {
     private val transport = TlsTransport(identity, trustedIds)
     private val context = context.applicationContext
@@ -120,6 +123,10 @@ class ParentSession(
 
     /** Video frames arrive on the current connection; false again after every loss. */
     val videoArriving: StateFlow<Boolean> = _videoArriving.asStateFlow()
+    private val _noLan = MutableStateFlow(false)
+
+    /** This phone itself has no Wi-Fi: the alarm says so instead of blaming the baby. */
+    val noLan: StateFlow<Boolean> = _noLan.asStateFlow()
     private val _gateOpen = MutableStateFlow(true)
 
     /** False while the noise gate mutes the sound (only with "only above threshold" on). */
@@ -142,7 +149,13 @@ class ParentSession(
     private var retry: Future<*>? = null
     private val lossAlarm = LossAlarm()
     private var alarmCheck: Future<*>? = null
+
+    /** The alarm already waited once for an attempt in progress during this loss. */
+    private var lastChanceUsed = false
     private val detector = SoundDetector()
+
+    /** The video is on screen (app open or picture-in-picture); otherwise the baby sends sound only. */
+    @Volatile private var watching = false
 
     /**
      * Starts watching [baby], replacing whatever was watched. [resume] treats it as a connection
@@ -188,6 +201,7 @@ class ParentSession(
      */
     fun onNetworkChanged() = executor.execute {
         networkChanged = true
+        _noLan.value = !hasLan()
         if (target == null) return@execute
         backoff.reset()
         val l = link
@@ -202,6 +216,15 @@ class ParentSession(
     fun acknowledgeAlarm() = executor.execute {
         lossAlarm.acknowledge()
         publishAlarm()
+    }
+
+    /** Call when the video becomes visible or hidden; the baby stops encoding video for us meanwhile. */
+    fun setWatching(visible: Boolean) = executor.execute {
+        if (visible == watching) return@execute
+        watching = visible
+        // The last frame may be old (the baby sent no video meanwhile): wait for a new one.
+        if (visible) _videoArriving.value = false
+        link?.let { sendControl(it, Watching(visible)) }
     }
 
     fun setGracePeriod(millis: Long) = executor.execute {
@@ -244,6 +267,7 @@ class ParentSession(
         alarmCheck?.cancel(false)
         alarmCheck = null
         lossAlarm.stop()
+        lastChanceUsed = false
         publishAlarm()
         audio.abandonFocus()
         _gateOpen.value = true
@@ -291,7 +315,7 @@ class ParentSession(
                 connection.close()
                 return
             }
-            connection.send(ownHello)
+            connection.send(ownHello.copy(watching = watching))
             while (true) {
                 val message = connection.receive() ?: break
                 if (message is Offer) connection.setReadTimeout(0) // set up; liveness comes from pongs
@@ -403,6 +427,7 @@ class ParentSession(
         target = l.baby // the address that worked is tried first next time
         backoff.reset()
         lossAlarm.onUp()
+        lastChanceUsed = false
         alarmCheck?.cancel(false)
         alarmCheck = null
         publishAlarm()
@@ -432,7 +457,7 @@ class ParentSession(
                     l.lastPong = now
                     if (!l.alive) onUp(l)
                 }
-                is Status -> _status.value = BabyStatus(message.battery.coerceIn(-1, 100), message.charging)
+                is Status -> _status.value = BabyStatus(message.battery.coerceIn(-1, 100), message.charging, message.thermalReduced)
                 is Level -> {
                     val db = message.dbfs.takeIf { it.isFinite() }?.coerceIn(LevelMeter.FLOOR_DBFS, 0f) ?: return
                     _level.value = db
@@ -455,6 +480,8 @@ class ParentSession(
         if (l.pinging) return
         l.pinging = true
         l.lastPong = SystemClock.elapsedRealtime()
+        // It may have changed since the hello.
+        sendControl(l, Watching(watching))
         ping(l)
     }
 
@@ -535,7 +562,15 @@ class ParentSession(
         }
         if (wasUp) _status.value = null
         linkDown()
-        retry = executor.schedule(if (busy) BUSY_RETRY_MS else backoff.next()) {
+        // Before the alarm may ring, try every 2 s (each attempt also tries the address discovery
+        // has now); afterwards back off.
+        val alarmPending = lossAlarm.dueIn(SystemClock.elapsedRealtime()) != null
+        val delay = when {
+            busy -> BUSY_RETRY_MS
+            alarmPending -> LOST_RETRY_MS
+            else -> backoff.next()
+        }
+        retry = executor.schedule(delay) {
             retry = null
             if (link == null) attempt()
         }
@@ -553,9 +588,23 @@ class ParentSession(
         val due = lossAlarm.dueIn(SystemClock.elapsedRealtime()) ?: return
         alarmCheck = executor.schedule(due) {
             alarmCheck = null
-            lossAlarm.check(SystemClock.elapsedRealtime())
-            publishAlarm()
+            // An attempt is under way right now: give it a few seconds before ringing.
+            if (link != null && !lastChanceUsed) {
+                lastChanceUsed = true
+                alarmCheck = executor.schedule(LAST_CHANCE_MS) {
+                    alarmCheck = null
+                    ringIfStillLost()
+                }
+                return@schedule
+            }
+            ringIfStillLost()
         }
+    }
+
+    private fun ringIfStillLost() {
+        _noLan.value = !hasLan()
+        lossAlarm.check(SystemClock.elapsedRealtime())
+        publishAlarm()
     }
 
     private fun publishAlarm() {
@@ -588,5 +637,7 @@ class ParentSession(
         const val SETUP_TIMEOUT_MS = 20_000L
         const val FAST_CONNECT_TIMEOUT_MS = 3_000
         const val BUSY_RETRY_MS = 10_000L
+        const val LOST_RETRY_MS = 2_000L
+        const val LAST_CHANCE_MS = 5_000L
     }
 }

@@ -121,7 +121,7 @@ malformed ones dropped (logged once per connection).
 | `ping` / `pong` | parent → baby / baby → parent | every 2 s |
 | `status` | baby → parent | `battery` (0–100, -1 unknown), `charging`, `parents`, `thermalReduced`; on open, after the first `ping`, every 30 s and on every battery change |
 | `level` | baby → parent | `dbfs`: the loudest 100 ms RMS window of the raw capture since the last message, 5 times per second, -90 to 0 |
-| `watching` | parent → baby | reserved for phase 6, ignored |
+| `watching` | parent → baby | `watching`: the video is visible (app open or picture-in-picture); sent on channel open and on every change |
 
 Liveness and reconnection:
 
@@ -134,5 +134,18 @@ Liveness and reconnection:
 - The baby drops a parent after 6 s without `ping` (15 s allowed for setup after the `answer`).
 - The parent reconnects on its own with a full new connection: first to the address that last
   worked (3 s connect timeout) if discovery now reports a different one, then to the discovered
-  one. Backoff 1, 2, 4, 8, then every 10 s; a new network triggers an immediate attempt.
+  one. While the alarm is pending (within the grace period) it tries every 2 s, afterwards with
+  backoff 1, 2, 4, 8, then every 10 s; a new network triggers an immediate attempt and restarts
+  discovery. If an attempt is still running when the grace period ends, the alarm waits up to
+  5 s more for it. A phone without any Wi-Fi says so in the alarm.
   After `busy` the parent retries every 10 s.
+
+Several parents (phase 6):
+
+- The baby serves up to 4 parents at once, each with its own peer connection on the shared
+  tracks; a fifth gets `busy`. The same parent connecting again replaces its old connection.
+- Video is encoded only for parents whose last `watching` (or the `hello` field; absent means
+  true) is true: the video sender's encoding is set `active = false` otherwise. Sound always goes
+  to every parent.
+- The camera runs only while a parent watches or the baby's own preview is on screen.
+- `status.parents` is the number of connected parents.

@@ -48,6 +48,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import dev.wendelin.hausfunk.ui.common.VideoView
 import dev.wendelin.hausfunk.ui.common.Zoom
+import dev.wendelin.hausfunk.ui.common.rememberHalfOpenFoldTop
+import androidx.compose.foundation.layout.height
 import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -98,6 +100,10 @@ fun WatchScreen(
     val gateOpen by session.gateOpen.collectAsState()
     var soundSettings by rememberSaveable { mutableStateOf(false) }
     ShowOverLockScreen(alarm == AlarmState.RINGING)
+    // Galaxy Flip standing half open: the video above the fold, sound and status below it.
+    val foldTop = if (inPip) null else rememberHalfOpenFoldTop()
+    val upperArea = if (foldTop != null) Alignment.TopCenter else Alignment.Center
+    val upperPadding = Modifier.padding(top = (foldTop ?: 0.dp) / 4)
     Box(
         Modifier
             .fillMaxSize()
@@ -119,7 +125,7 @@ fun WatchScreen(
                 session.eglBase,
                 session::attach,
                 session::detach,
-                Modifier.fillMaxSize(),
+                if (foldTop != null) Modifier.fillMaxWidth().height(foldTop) else Modifier.fillMaxSize(),
                 onAspectRatio = onAspectRatio,
                 onBounds = onVideoBounds,
                 zoom = zoom,
@@ -187,7 +193,14 @@ fun WatchScreen(
             )
         }
         if (alarm != AlarmState.OFF && state is ParentState.WithBaby) {
-            AlarmCard(state.baby.name, ringing = alarm == AlarmState.RINGING, onAcknowledge = session::acknowledgeAlarm, Modifier.align(Alignment.Center))
+            val noLan by session.noLan.collectAsState()
+            AlarmCard(
+                state.baby.name,
+                noLan = noLan,
+                ringing = alarm == AlarmState.RINGING,
+                onAcknowledge = session::acknowledgeAlarm,
+                modifier = Modifier.align(upperArea).then(upperPadding),
+            )
         } else {
             val message = when (state) {
                 is ParentState.Connecting -> stringResource(R.string.watch_connecting, state.baby.name)
@@ -200,7 +213,8 @@ fun WatchScreen(
             if (message != null) {
                 Column(
                     Modifier
-                        .align(Alignment.Center)
+                        .align(upperArea)
+                        .then(upperPadding)
                         .padding(24.dp)
                         .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
                         .padding(16.dp),
@@ -245,7 +259,13 @@ private fun PipBadge(state: ParentState, lastSound: Long?, modifier: Modifier = 
 
 /** The connection-loss alarm on screen: what happened and "Acknowledge" while it rings. */
 @Composable
-private fun AlarmCard(babyName: String, ringing: Boolean, onAcknowledge: () -> Unit, modifier: Modifier = Modifier) {
+private fun AlarmCard(
+    babyName: String,
+    noLan: Boolean,
+    ringing: Boolean,
+    onAcknowledge: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Column(
         modifier
             .padding(24.dp)
@@ -254,13 +274,13 @@ private fun AlarmCard(babyName: String, ringing: Boolean, onAcknowledge: () -> U
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            stringResource(R.string.alarm_title, babyName),
+            stringResource(if (noLan) R.string.alarm_title_no_lan else R.string.alarm_title, babyName),
             color = MaterialTheme.colorScheme.onErrorContainer,
             style = MaterialTheme.typography.headlineSmall,
             textAlign = TextAlign.Center,
         )
         Text(
-            stringResource(R.string.alarm_body),
+            if (noLan) stringResource(R.string.alarm_body_no_lan, babyName) else stringResource(R.string.alarm_body),
             color = MaterialTheme.colorScheme.onErrorContainer,
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center,

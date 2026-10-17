@@ -5,6 +5,7 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import androidx.core.net.toUri
 import android.content.pm.ServiceInfo
 import android.os.IBinder
 import android.os.SystemClock
@@ -116,7 +117,7 @@ class ParentService : Service() {
                     return@withContext
                 }
                 val s = session ?: createSession(identity)
-                val hello = Hello(PROTOCOL_VERSION, identity.deviceId, name, appVersion(this@ParentService), watching = true)
+                val hello = Hello(PROTOCOL_VERSION, identity.deviceId, name, appVersion(this@ParentService))
                 s.connect(baby, hello, settings.alarmGraceSeconds * 1_000L, resume)
             }
         }
@@ -132,6 +133,7 @@ class ParentService : Service() {
             resolve = { id -> finder.babies.value.firstOrNull { it.deviceId == id } },
             bind = app.lanNetworks::bind,
             onUnpaired = { baby -> app.forgetUnpaired(baby.deviceId, baby.name) },
+            hasLan = app.lanNetworks::hasLan,
         )
         session = s
         app.parentSession.value = s
@@ -150,6 +152,7 @@ class ParentService : Service() {
         sc.launch {
             combine(app.settings.settings, watched) { settings, baby -> settings to baby }.collect { (settings, baby) ->
                 s.setGracePeriod(settings.alarmGraceSeconds * 1_000L)
+                alarm.sound = settings.alarmSound?.toUri()
                 if (baby != null) s.setSoundPrefs(settings.soundFor(baby.deviceId))
             }
         }
@@ -158,7 +161,7 @@ class ParentService : Service() {
                 when {
                     // Never on a device that runs as the baby; monitoring as a parent ends there.
                     a == AlarmState.RINGING && BabyService.running -> stopMonitoring()
-                    a == AlarmState.RINGING -> alarm.start((st as? ParentState.WithBaby)?.baby?.name.orEmpty())
+                    a == AlarmState.RINGING -> alarm.start((st as? ParentState.WithBaby)?.baby?.name.orEmpty(), s.noLan.value)
                     else -> alarm.stop()
                 }
             }

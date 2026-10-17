@@ -4,6 +4,8 @@ import android.content.Context
 import android.media.AudioManager
 import android.media.MediaRecorder
 import android.util.Log
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import org.webrtc.AudioSource
 import org.webrtc.AudioTrack
 import org.webrtc.Camera2Enumerator
@@ -99,9 +101,63 @@ class BabyMedia(
         videoSource = video
         cam.initialize(helper, context, video.capturerObserver)
         capturer = cam
-        cam.startCapture(WIDTH, HEIGHT, FPS)
+        // Capture starts with setCapturing, once someone wants to see the picture.
         videoTrack = factory.createVideoTrack("video", video).also { track -> previewSinks.forEach(track::addSink) }
         canSwitchCamera = names.size > 1
+    }
+
+    private var capturing = false
+    private var reduced = false
+
+    /**
+     * Starting and stopping the camera happen here: stopping waits for a camera that is still
+     * opening and could hang, which must never hold up the session (its pongs keep the parents'
+     * alarm quiet).
+     */
+    private val cameraControl = Executors.newSingleThreadExecutor { Thread(it, "camera-control") }
+
+    /** Whether the baby's own preview is shown (it needs the camera too). */
+    val hasPreview: Boolean get() = previewSinks.isNotEmpty()
+
+    /** Starts or stops the camera; nobody watching means no camera, less heat and battery. */
+    fun setCapturing(on: Boolean) {
+        val cam = capturer ?: return
+        if (on == capturing) return
+        capturing = on
+        val reducedNow = reduced
+        cameraControl.execute {
+            if (on) {
+                if (reducedNow) cam.startCapture(REDUCED_WIDTH, REDUCED_HEIGHT, REDUCED_FPS) else cam.startCapture(WIDTH, HEIGHT, FPS)
+            } else {
+                try {
+                    cam.stopCapture()
+                } catch (e: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                }
+            }
+        }
+    }
+
+    /**
+     * Lower resolution and frame rate while the phone is hot; back to normal when it cooled down.
+     * The camera itself captures less too, which is where most of the heat comes from.
+     */
+    fun setReduced(reduced: Boolean) {
+        val source = videoSource ?: return
+        this.reduced = reduced
+        if (reduced) source.adaptOutputFormat(REDUCED_WIDTH, REDUCED_HEIGHT, REDUCED_FPS)
+        else source.adaptOutputFormat(WIDTH, HEIGHT, FPS)
+        val cam = capturer ?: return
+        if (!capturing) return
+        cameraControl.execute {
+            if (reduced) cam.changeCaptureFormat(REDUCED_WIDTH, REDUCED_HEIGHT, REDUCED_FPS)
+            else cam.changeCaptureFormat(WIDTH, HEIGHT, FPS)
+        }
+    }
+
+    /** The camera stopped by itself (error, taken away): the next [setCapturing] opens it again. */
+    fun onCameraStopped() {
+        capturing = false
     }
 
     /** Front and back camera. */
@@ -121,15 +177,20 @@ class BabyMedia(
 
     /** Releases whatever [start] opened, also after it failed halfway. */
     fun dispose() {
-        try {
-            capturer?.stopCapture()
-        } catch (e: InterruptedException) {
-            Thread.currentThread().interrupt()
+        setCapturing(false)
+        // The camera is released after it stopped; a hanging camera is given up on after a while.
+        val camera = cameraControl.submit {
+            capturer?.dispose()
+            videoTrack?.dispose()
+            videoSource?.dispose()
+            textureHelper?.dispose()
         }
-        capturer?.dispose()
-        videoTrack?.dispose()
-        videoSource?.dispose()
-        textureHelper?.dispose()
+        try {
+            camera.get(CAMERA_RELEASE_TIMEOUT_S, TimeUnit.SECONDS)
+        } catch (e: Exception) {
+            Log.w(TAG, "camera release did not finish")
+        }
+        cameraControl.shutdown()
         if (::audioTrack.isInitialized) audioTrack.dispose()
         audioSource?.dispose()
         if (::factory.isInitialized) factory.dispose()
@@ -166,11 +227,15 @@ class BabyMedia(
 
     companion object {
         private const val TAG = "BabyMedia"
+        private const val CAMERA_RELEASE_TIMEOUT_S = 5L
 
         // Captured at 1080p; sent at whatever the link and the encoder manage, scaled down
         // automatically.
         const val WIDTH = 1920
         const val HEIGHT = 1080
         const val FPS = 15
+        const val REDUCED_WIDTH = 640
+        const val REDUCED_HEIGHT = 480
+        const val REDUCED_FPS = 10
     }
 }

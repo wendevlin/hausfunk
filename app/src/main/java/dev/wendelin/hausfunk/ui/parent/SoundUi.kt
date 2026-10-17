@@ -132,6 +132,14 @@ fun SoundStatus(
                 )
             }
         }
+        if (status?.hot == true) {
+            Text(
+                stringResource(R.string.watch_baby_hot),
+                color = WatchColors.onBackground,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
     }
 }
 

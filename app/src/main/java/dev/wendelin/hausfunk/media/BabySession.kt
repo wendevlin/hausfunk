@@ -1,6 +1,7 @@
 package dev.wendelin.hausfunk.media
 
 import android.content.Context
+import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
 import dev.wendelin.hausfunk.SerialExecutor
@@ -32,6 +33,7 @@ import dev.wendelin.hausfunk.signaling.SignalingServer
 import dev.wendelin.hausfunk.signaling.Status
 import dev.wendelin.hausfunk.signaling.TlsTransport
 import dev.wendelin.hausfunk.signaling.Unpair
+import dev.wendelin.hausfunk.signaling.Watching
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicBoolean
@@ -51,8 +53,8 @@ import org.webrtc.SessionDescription
 import org.webrtc.VideoSink
 
 data class BabyState(
-    /** Name of the connected parent, null while waiting. */
-    val parentName: String? = null,
+    /** Names of the connected parents, in the order they connected; empty while waiting. */
+    val parents: List<String> = emptyList(),
     /** False if the phone has no camera; sound still works. */
     val cameraAvailable: Boolean = true,
     /** The camera reported an error or was taken away (e.g. by another app). */
@@ -65,8 +67,10 @@ data class BabyState(
 )
 
 /**
- * Baby side: streams camera and microphone ([BabyMedia]) to one paired parent (several parents
- * arrive in phase 6), with battery and sound level on the data channel. Any device may ask to
+ * Baby side: streams camera and microphone ([BabyMedia]) to up to [MAX_PARENTS] paired parents at
+ * once, each over its own peer connection, with battery and sound level on the data channel.
+ * Video goes only to parents that watch (app open or picture-in-picture); the camera runs only
+ * while one does or the baby's own preview is shown. Any device may ask to
  * pair; nothing is stored unless the user confirms the emojis on both phones. Every connection
  * says first what it wants (`hello` or `pair_commit`), read on its handshake thread. All WebRTC
  * objects are touched only on the session's own thread. [stop] is final.
@@ -88,14 +92,22 @@ class BabySession(
 
     /** Shared with the local preview renderer. */
     val eglBase: EglBase = EglBase.create()
-    private val media = BabyMedia(this.context, eglBase) { working ->
+    private val media: BabyMedia = BabyMedia(this.context, eglBase) { working ->
         _state.update { it.copy(cameraError = !working) }
+        if (!working) {
+            // The capturer stopped itself; open it again after a moment if it is still wanted.
+            executor.execute {
+                if (mediaOpen) media.onCameraStopped()
+                executor.schedule(CAMERA_RETRY_MS, ::updateCapture)
+            }
+        }
     }
     private var mediaOpen = false
 
     private val advertiser = BabyAdvertiser(this.context)
     private var server: SignalingServer? = null
-    private var peer: Peer? = null
+    /** Connected parents by device ID. */
+    private val peers = linkedMapOf<String, Peer>()
     private var stopped = false
     private lateinit var ownHello: Hello
     private var handshaking = 0
@@ -109,7 +121,15 @@ class BabySession(
     /** After any failed attempt, no pairing for a while: new keys per attempt get no more tries. */
     private var pairingPausedUntil = 0L
 
-    private val battery = BatteryWatcher(this.context) { executor.execute { peer?.let(::sendStatus) } }
+    /** The phone is too hot: video is reduced (phase 7 thermal fallback). */
+    private var thermalReduced = false
+    private val powerManager = this.context.getSystemService(PowerManager::class.java)
+    // Registered with the session's executor, so it is called on the session's thread.
+    private val thermalListener = PowerManager.OnThermalStatusChangedListener(::onThermalStatus)
+    /** Removing a listener that was never added throws, e.g. after a failed start. */
+    private var thermalRegistered = false
+
+    private val battery = BatteryWatcher(this.context) { executor.execute { peers.values.forEach(::sendStatus) } }
 
     fun start(name: String, appVersion: String) = executor.execute {
         if (stopped) return@execute
@@ -121,11 +141,14 @@ class BabySession(
             _state.update {
                 it.copy(cameraAvailable = media.videoTrack != null, canSwitchCamera = media.canSwitchCamera)
             }
+            updateCapture()
             val s = transport.listen()
             server = s
             advertiser.start(ownHello.name, identity.deviceId, s.port)
             thread(name = "baby-accept") { acceptLoop(s) }
             battery.start()
+            powerManager.addThermalStatusListener(executor, thermalListener)
+            thermalRegistered = true
             executor.schedule(LEVEL_INTERVAL_MS, ::sendLevel)
             executor.schedule(STATUS_INTERVAL_MS, ::sendStatusPeriodically)
         } catch (e: IOException) {
@@ -140,7 +163,7 @@ class BabySession(
         if (stopped) return@execute
         stopped = true
         pairing?.cancel()
-        peer?.let { close(it, sendBye = true) }
+        peers.values.toList().forEach { close(it, sendBye = true) }
         closeAll()
         eglBase.release()
         executor.shutdown()
@@ -153,14 +176,15 @@ class BabySession(
 
     /** Call whenever the trust store changes: a removed parent is told so and disconnected at once. */
     fun onTrustChanged(ids: Set<String>) = executor.execute {
-        val p = peer ?: return@execute
-        if (p.connection.peerDeviceId in ids) return@execute
-        try {
-            p.connection.send(Unpair)
-        } catch (e: IOException) {
-            // It learns on its next connection instead.
+        for (p in peers.values.toList()) {
+            if (p.id in ids) continue
+            try {
+                p.connection.send(Unpair)
+            } catch (e: IOException) {
+                // It learns on its next connection instead.
+            }
+            close(p, sendBye = false)
         }
-        close(p, sendBye = false)
     }
 
     /** Rejects or ends a pairing in progress ("Passt nicht", back). */
@@ -170,9 +194,54 @@ class BabySession(
     fun switchCamera() = executor.execute { media.switchCamera() }
 
     /** Shows the camera picture in [sink] (the baby's own preview). Safe to call from any thread. */
-    fun attachPreview(sink: VideoSink) = executor.execute { media.attachPreview(sink) }
+    fun attachPreview(sink: VideoSink) = executor.execute {
+        media.attachPreview(sink)
+        updateCapture()
+    }
 
-    fun detachPreview(sink: VideoSink) = executor.execute { media.detachPreview(sink) }
+    fun detachPreview(sink: VideoSink) = executor.execute {
+        media.detachPreview(sink)
+        updateCapture()
+    }
+
+    private fun isCurrent(p: Peer) = peers[p.id] === p
+
+    /**
+     * From SEVERE on, video drops to 640x480 at 10 fps so the phone can cool down; back to normal
+     * at MODERATE or below (the gap avoids switching back and forth). Sound is never touched.
+     */
+    private fun onThermalStatus(status: Int) {
+        if (stopped || !mediaOpen) return
+        val reduce = when {
+            status >= PowerManager.THERMAL_STATUS_SEVERE -> true
+            status <= PowerManager.THERMAL_STATUS_MODERATE -> false
+            else -> thermalReduced
+        }
+        if (reduce == thermalReduced) return
+        thermalReduced = reduce
+        Log.i(TAG, "thermal status $status, video reduced: $reduce")
+        media.setReduced(reduce)
+        peers.values.forEach(::sendStatus)
+    }
+
+    /** The camera runs only for someone: a watching parent or the baby's own preview. */
+    private fun updateCapture() {
+        if (!mediaOpen) return
+        media.setCapturing(media.hasPreview || peers.values.any { it.watching })
+    }
+
+    /** Video is encoded and sent only to a parent that watches; sound always. */
+    private fun applyWatching(p: Peer) {
+        val sender = p.video?.sender ?: return
+        val parameters = sender.parameters
+        parameters.encodings.forEach { it.active = p.watching }
+        sender.parameters = parameters
+        updateCapture()
+    }
+
+    private fun publishParents() {
+        _state.update { it.copy(parents = peers.values.map { p -> p.name.ifEmpty { "?" } }) }
+    }
 
     private fun failStart(e: Exception) {
         Log.w(TAG, "could not start", e)
@@ -184,6 +253,8 @@ class BabySession(
     /** Releases capture, server and advertising; safe to call twice. */
     private fun closeAll() {
         battery.stop()
+        if (thermalRegistered) powerManager.removeThermalStatusListener(thermalListener)
+        thermalRegistered = false
         advertiser.stop()
         server?.close()
         server = null
@@ -203,7 +274,7 @@ class BabySession(
     }
 
     private fun onAccepted(pending: SignalingServer.Pending) {
-        val open = handshaking + (if (peer != null) 1 else 0) + (if (pairingActive) 1 else 0)
+        val open = handshaking + peers.size + (if (pairingActive) 1 else 0)
         if (stopped || open >= MAX_CONNECTIONS) {
             pending.close()
             return
@@ -294,10 +365,11 @@ class BabySession(
         // Trust may have changed since the handshake (a parent removed meanwhile).
         if (stopped || connection.peerDeviceId !in trustedIds()) return connection.close()
         // The same parent connecting again (it reconnected or tapped us again) replaces its old
-        // connection instead of being told that we are busy.
-        peer?.let { if (it.connection.peerDeviceId == connection.peerDeviceId) close(it, sendBye = false) }
-        if (peer != null) {
-            // One parent at a time until phase 6.
+        // connection instead of counting twice.
+        // Quietly: the camera and the others' status stay as they are for the new connection.
+        peers[connection.peerDeviceId]?.let { close(it, sendBye = false, update = false) }
+        if (peers.size >= MAX_PARENTS) {
+            // Every parent costs an encoder; more would overheat the baby phone.
             thread(name = "baby-busy") {
                 try {
                     connection.send(Busy)
@@ -309,9 +381,9 @@ class BabySession(
             return
         }
         val p = Peer(connection)
-        peer = p
+        peers[p.id] = p
         onHello(p, hello)
-        if (peer === p) thread(name = "baby-read") { readLoop(p) }
+        if (isCurrent(p)) thread(name = "baby-read") { readLoop(p) }
     }
 
     private fun readLoop(p: Peer) {
@@ -320,18 +392,18 @@ class BabySession(
                 val message = p.connection.receive() ?: break
                 if (message == Unpair) {
                     executor.execute {
-                        if (peer === p) close(p, sendBye = false)
+                        if (isCurrent(p)) close(p, sendBye = false)
                         onUnpaired(p.connection.peerDeviceId, p.name)
                     }
                     return
                 }
                 if (message is Answer) p.connection.setReadTimeout(0) // set up; liveness comes from pings
-                executor.execute { if (peer === p) handle(p, message) }
+                executor.execute { if (isCurrent(p)) handle(p, message) }
             }
         } catch (e: IOException) {
             Log.i(TAG, "parent connection ended: ${e.javaClass.simpleName}")
         }
-        executor.execute { if (peer === p) close(p, sendBye = false) }
+        executor.execute { if (isCurrent(p)) close(p, sendBye = false) }
     }
 
     private fun handle(p: Peer, message: SignalingMessage) {
@@ -339,7 +411,7 @@ class BabySession(
             is Answer -> p.pc?.let { pc ->
                 pc.setRemoteDescription(
                     WebRtc.sdpObserver(executor, { fail(p, it) }) {
-                        if (peer === p) {
+                        if (isCurrent(p)) {
                             p.ice.flush(pc)
                             // The parent pings once the data channel is open; allow time for ICE.
                             p.lastPing = SystemClock.elapsedRealtime() + SETUP_GRACE_MS - LIVENESS_TIMEOUT_MS
@@ -365,6 +437,8 @@ class BabySession(
             return fail(p, "bad hello")
         }
         p.name = DeviceName.sanitize(hello.name)
+        // Older parents send no `watching`: they watch.
+        p.watching = hello.watching ?: true
         if (!send(p, ownHello)) return
         val factory = media.factory
         val pc = factory.createPeerConnection(WebRtc.rtcConfiguration(), observer(p)) ?: return fail(p, "no peer connection")
@@ -376,47 +450,57 @@ class BabySession(
             video.setCodecPreferences(media.videoCodecs)
             p.video = video
         }
+        // The encoding's `active` is set with the other limits once negotiated (limitVideo).
+        updateCapture()
         p.control = pc.createDataChannel("control", DataChannel.Init().apply { ordered = true })
             .also { it.registerObserver(controlObserver(p, it)) }
         pc.createOffer(
             WebRtc.sdpObserver(executor, { fail(p, it) }) { offer ->
-                if (peer !== p || offer == null) return@sdpObserver
+                if (!isCurrent(p) || offer == null) return@sdpObserver
                 pc.setLocalDescription(
                     WebRtc.sdpObserver(executor, { fail(p, it) }) {
-                        if (peer === p) send(p, Offer(offer.description))
+                        if (isCurrent(p)) send(p, Offer(offer.description))
                     },
                     offer,
                 )
             },
             MediaConstraints(),
         )
-        _state.update { it.copy(parentName = p.name) }
+        publishParents()
+        // The others' status counts parents.
+        peers.values.forEach(::sendStatus)
     }
 
     private fun controlObserver(p: Peer, channel: DataChannel) = object : DataChannel.Observer {
         override fun onBufferedAmountChange(previousAmount: Long) = Unit
 
         override fun onStateChange() {
-            if (channel.state() == DataChannel.State.OPEN) executor.execute { if (peer === p) sendStatus(p) }
+            if (channel.state() == DataChannel.State.OPEN) executor.execute { if (isCurrent(p)) sendStatus(p) }
         }
 
         override fun onMessage(buffer: DataChannel.Buffer) {
             // The buffer is only valid during this call.
             val text = Charsets.UTF_8.decode(buffer.data).toString()
-            executor.execute { if (peer === p) onControl(p, text) }
+            executor.execute { if (isCurrent(p)) onControl(p, text) }
         }
     }
 
     private fun onControl(p: Peer, text: String) {
         when (val decoded = MessageCodec.decodeControl(text)) {
-            is Decoded.Message -> if (decoded.message == Ping) {
-                p.lastPing = SystemClock.elapsedRealtime()
-                sendControl(p, Pong)
-                // The parent surely listens now; the status sent on open may have come too early.
-                if (!p.pinged) sendStatus(p)
-                p.pinged = true
+            is Decoded.Message -> when (val message = decoded.message) {
+                Ping -> {
+                    p.lastPing = SystemClock.elapsedRealtime()
+                    sendControl(p, Pong)
+                    // The parent surely listens now; the status sent on open may have come too early.
+                    if (!p.pinged) sendStatus(p)
+                    p.pinged = true
+                }
+                is Watching -> if (message.watching != p.watching) {
+                    p.watching = message.watching
+                    applyWatching(p)
+                }
+                else -> Unit // not for the baby
             }
-            // `watching` (video gating) arrives in phase 6; other types are not for us.
             is Decoded.Unknown -> Unit
             Decoded.Malformed -> if (!p.loggedMalformed) {
                 p.loggedMalformed = true
@@ -427,7 +511,7 @@ class BabySession(
 
     /** Drops a parent that stopped pinging: it is gone, even if the sockets have not noticed. */
     private fun checkLiveness(p: Peer) {
-        if (peer !== p) return
+        if (!isCurrent(p)) return
         if (SystemClock.elapsedRealtime() - p.lastPing > LIVENESS_TIMEOUT_MS) {
             Log.i(TAG, "parent stopped pinging")
             return close(p, sendBye = true)
@@ -444,19 +528,22 @@ class BabySession(
 
     private fun sendStatus(p: Peer) {
         val b = battery.current() ?: Battery(-1, false)
-        sendControl(p, Status(battery = b.percent, charging = b.charging, parents = 1, thermalReduced = false))
+        sendControl(p, Status(battery = b.percent, charging = b.charging, parents = peers.size, thermalReduced = thermalReduced))
     }
 
     private fun sendStatusPeriodically() {
         if (stopped) return
-        peer?.let(::sendStatus)
+        peers.values.forEach(::sendStatus)
         executor.schedule(STATUS_INTERVAL_MS, ::sendStatusPeriodically)
     }
 
     private fun sendLevel() {
         if (stopped) return
         val db = media.takeLevel()
-        if (db != null) peer?.let { sendControl(it, Level(Math.round(db * 10) / 10f)) }
+        if (db != null) {
+            val level = Level(Math.round(db * 10) / 10f)
+            peers.values.forEach { sendControl(it, level) }
+        }
         executor.schedule(LEVEL_INTERVAL_MS, ::sendLevel)
     }
 
@@ -466,6 +553,7 @@ class BabySession(
         parameters.encodings.forEach {
             it.maxBitrateBps = MAX_BITRATE_BPS
             it.maxFramerate = BabyMedia.FPS
+            it.active = p.watching
         }
         // When bandwidth or CPU runs short, WebRTC lowers resolution and frame rate together; the
         // parent's view ignores the small aspect changes that come with it.
@@ -475,14 +563,14 @@ class BabySession(
 
     private fun observer(p: Peer) = object : PeerObserver() {
         override fun onIceCandidate(candidate: IceCandidate) = executor.execute {
-            if (peer === p) send(p, Ice(candidate.sdp, candidate.sdpMid, candidate.sdpMLineIndex))
+            if (isCurrent(p)) send(p, Ice(candidate.sdp, candidate.sdpMid, candidate.sdpMLineIndex))
         }
 
         override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {
             if (state == PeerConnection.IceConnectionState.FAILED ||
                 state == PeerConnection.IceConnectionState.DISCONNECTED
             ) {
-                executor.execute { if (peer === p) close(p, sendBye = true) }
+                executor.execute { if (isCurrent(p)) close(p, sendBye = true) }
             }
         }
     }
@@ -497,11 +585,12 @@ class BabySession(
 
     private fun fail(p: Peer, reason: String) {
         Log.w(TAG, "closing parent connection: $reason")
-        if (peer === p) close(p, sendBye = true)
+        if (isCurrent(p)) close(p, sendBye = true)
     }
 
-    private fun close(p: Peer, sendBye: Boolean) {
-        if (peer === p) peer = null
+    private fun close(p: Peer, sendBye: Boolean, update: Boolean = true) {
+        val wasCurrent = isCurrent(p)
+        if (wasCurrent) peers.remove(p.id)
         if (sendBye) {
             try {
                 p.connection.send(Bye)
@@ -515,11 +604,17 @@ class BabySession(
         p.control = null
         p.pc?.dispose()
         p.pc = null
-        _state.update { it.copy(parentName = null) }
+        p.video = null
+        if (!wasCurrent || !update) return
+        publishParents()
+        updateCapture()
+        peers.values.forEach(::sendStatus)
     }
 
     private class Peer(val connection: SignalingConnection) {
+        val id: String get() = connection.peerDeviceId
         var name: String = ""
+        var watching = true
         var pc: PeerConnection? = null
         var video: RtpTransceiver? = null
         var control: DataChannel? = null
@@ -540,6 +635,10 @@ class BabySession(
         const val PAIRING_BLOCK_MS = 60_000L
         const val PAIRING_PAUSE_MS = 10_000L
         const val MAX_CONNECTIONS = 8
+
+        /** Each parent costs one encoder (see docs/PLAN.md, "Media pipeline"). */
+        const val MAX_PARENTS = 4
+        const val CAMERA_RETRY_MS = 3_000L
         const val GREETING_TIMEOUT_MS = 15_000L
         const val LEVEL_INTERVAL_MS = 200L
         const val STATUS_INTERVAL_MS = 30_000L

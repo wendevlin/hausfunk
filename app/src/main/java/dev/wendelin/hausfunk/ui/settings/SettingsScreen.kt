@@ -1,6 +1,21 @@
 package dev.wendelin.hausfunk.ui.settings
 
+import android.app.Activity
+import android.content.Context
+import android.content.Intent
+import android.media.RingtoneManager
+import android.net.Uri
+import android.provider.MediaStore
+import android.provider.Settings.System.DEFAULT_ALARM_ALERT_URI
+import androidx.compose.runtime.produceState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContract
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.IntentCompat
+import androidx.core.net.toUri
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -59,6 +74,8 @@ fun SettingsScreen(
     alarmGraceSeconds: Int,
     onBack: () -> Unit,
     onAlarmGrace: (Int) -> Unit,
+    alarmSound: String?,
+    onAlarmSound: (String?) -> Unit,
     onRenameSelf: (String) -> Unit,
     onRenamePeer: (deviceId: String, name: String) -> Unit,
     onRemovePeer: (deviceId: String) -> Unit,
@@ -113,6 +130,7 @@ fun SettingsScreen(
                 item { HorizontalDivider(Modifier.padding(vertical = 8.dp)) }
                 item { SectionHeader(stringResource(R.string.settings_parent)) }
                 item { AlarmGrace(alarmGraceSeconds, onAlarmGrace) }
+                item { AlarmSound(alarmSound, onAlarmSound) }
                 item { HorizontalDivider(Modifier.padding(vertical = 8.dp)) }
                 item { SectionHeader(stringResource(R.string.settings_paired_devices)) }
                 if (pairedDevices.isEmpty()) {
@@ -211,6 +229,51 @@ private fun AlarmGrace(seconds: Int, onChange: (Int) -> Unit) {
             }
         },
     )
+}
+
+/** The alarm's sound, chosen with the system's sound picker; "Default" means the phone's alarm sound. */
+@Composable
+private fun AlarmSound(uri: String?, onChange: (String?) -> Unit) {
+    val context = LocalContext.current
+    val picker = rememberLauncherForActivityResult(PickAlarmSound) { picked ->
+        // Null means the picker was cancelled; the default entry comes back as its own URI.
+        if (picked != null) onChange(picked.takeUnless { it == DEFAULT_ALARM_ALERT_URI }?.toString())
+    }
+    // Read from the media database, off the main thread (a Ringtone would open a player for it).
+    val title by produceState<String?>(null, uri) {
+        value = uri?.let { soundTitle(context, it.toUri()) }
+    }
+    ListItem(
+        headlineContent = { Text(stringResource(R.string.settings_alarm_sound)) },
+        supportingContent = { Text(title ?: stringResource(R.string.settings_alarm_sound_default)) },
+        modifier = Modifier.clickable { picker.launch(uri?.toUri()) },
+    )
+}
+
+private suspend fun soundTitle(context: Context, uri: Uri): String? = withContext(Dispatchers.IO) {
+    runCatching {
+        context.contentResolver.query(uri, arrayOf(MediaStore.MediaColumns.TITLE), null, null, null)?.use {
+            if (it.moveToFirst()) it.getString(0) else null
+        }
+    }.getOrNull()
+}
+
+/** The system's alarm sound picker, without "Silent": an alarm nobody hears is no alarm. */
+private object PickAlarmSound : ActivityResultContract<Uri?, Uri?>() {
+    override fun createIntent(context: Context, input: Uri?): Intent =
+        Intent(RingtoneManager.ACTION_RINGTONE_PICKER)
+            .putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_ALARM)
+            .putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
+            .putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+            .putExtra(RingtoneManager.EXTRA_RINGTONE_DEFAULT_URI, DEFAULT_ALARM_ALERT_URI)
+            .putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, input ?: DEFAULT_ALARM_ALERT_URI)
+
+    override fun parseResult(resultCode: Int, intent: Intent?): Uri? =
+        if (resultCode == Activity.RESULT_OK) {
+            IntentCompat.getParcelableExtra(intent ?: return null, RingtoneManager.EXTRA_RINGTONE_PICKED_URI, Uri::class.java)
+        } else {
+            null
+        }
 }
 
 @Composable

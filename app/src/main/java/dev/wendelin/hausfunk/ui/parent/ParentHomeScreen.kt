@@ -1,5 +1,11 @@
 package dev.wendelin.hausfunk.ui.parent
 
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -94,15 +100,12 @@ fun ParentHomeScreen(
                 } else {
                     LazyColumn(Modifier.weight(1f)) {
                         if (paired.isNotEmpty()) item(key = "paired") { SectionTitle(stringResource(R.string.parent_paired_section)) }
-                        items(paired, key = { it.deviceId }) { device ->
-                            val online = device.deviceId in onlineIds
-                            ListItem(
-                                headlineContent = { Text(device.name) },
-                                supportingContent = {
-                                    Text(stringResource(if (online) R.string.parent_online else R.string.parent_offline))
-                                },
-                                modifier = if (online) Modifier.clickable { onSelect(device.deviceId) } else Modifier,
-                            )
+                        // Online first (what can be watched now), each group by name.
+                        val sorted = paired.sortedWith(
+                            compareBy<TrustedDevice> { it.deviceId !in onlineIds }.thenBy { it.name.lowercase() },
+                        )
+                        items(sorted, key = { it.deviceId }) { device ->
+                            PairedItem(device.name, online = device.deviceId in onlineIds) { onSelect(device.deviceId) }
                         }
                         if (newBabies.isNotEmpty()) item(key = "new") { SectionTitle(stringResource(R.string.parent_new_section)) }
                         items(newBabies, key = { "new-" + it.deviceId }) { baby ->
@@ -118,6 +121,39 @@ fun ParentHomeScreen(
         }
     }
 }
+
+/** A paired device: online ones stand out with a green dot and text, offline ones are muted. */
+@Composable
+private fun PairedItem(name: String, online: Boolean, onClick: () -> Unit) {
+    val green = if (isSystemInDarkTheme()) OnlineGreenDark else OnlineGreenLight
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+    ListItem(
+        leadingContent = {
+            Box(
+                Modifier
+                    .size(12.dp)
+                    .background(if (online) green else muted, CircleShape),
+            )
+        },
+        headlineContent = {
+            Text(
+                name,
+                fontWeight = if (online) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (online) Color.Unspecified else muted,
+            )
+        },
+        supportingContent = {
+            Text(
+                stringResource(if (online) R.string.parent_online else R.string.parent_offline),
+                color = if (online) green else muted,
+            )
+        },
+        modifier = if (online) Modifier.clickable(onClick = onClick) else Modifier,
+    )
+}
+
+private val OnlineGreenLight = Color(0xFF2E7D32)
+private val OnlineGreenDark = Color(0xFF81C784)
 
 @Composable
 private fun SectionTitle(text: String) {

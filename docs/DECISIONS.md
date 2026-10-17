@@ -253,6 +253,47 @@ Owner's request: review everything, remove leftovers, keep it simple, split what
   the trust store write finishes, so that first connection cannot be refused (or answered with
   `unpair`) by a slower write on either phone.
 
+## Phase 6
+
+- **Up to 4 parents** as planned (the owner would be fine with 2); the limit is one constant.
+- **"Watching" comes from the parent activity's lifecycle**: started (open or picture-in-picture)
+  means watching; stopped (closed PiP, screen off, another app) means sound only. The parent
+  starts not watching and tells the baby as soon as the video is visible.
+- **The baby's own preview keeps the camera on**, but only while its screen is really visible
+  (started), not while it runs in the background or with "Screen off".
+- **The camera is switched on and off on its own thread**: stopping waits for a camera that is still
+  opening, and the session thread must never wait (its pongs keep the parents' alarm quiet). A
+  camera that stopped by itself (error, taken away) is opened again after 3 s if still wanted.
+- **Paired babies that are online come first in the parent's list**, with a green dot and text;
+  offline ones are muted (owner's request).
+
+- **Before the alarm rings, the parent tries hard (owner's request):** every 2 s during the grace
+  period instead of backing off, each network change at once, and an attempt still running when
+  the grace period ends gets up to 5 s more. If this phone has no Wi-Fi at all, the alarm says
+  "This phone is not on Wi-Fi" instead of blaming the baby.
+
+## Phase 7
+
+- **App size: R8 instead of hand-copied icons.** R8 with resource shrinking drops every unused
+  class of `material-icons-extended` by itself, so copying the icons as vector drawables would
+  only add files. `arm64-v8a` only (both household phones and every phone of the last years are
+  arm64). Release APK 47 MB → 16 MB, debug 23 MB.
+- **R8 also on debug builds**, with `-dontobfuscate`: the debug APK is what gets tested, so it must
+  be the same code as the release, and stack traces stay readable. libwebrtc is kept whole (JNI
+  calls into Java by name).
+- **Thermal fallback**: at `THERMAL_STATUS_SEVERE` and above the baby drops to 640×480 at 10 fps
+  and tells the parents (note on the parent screen); at `MODERATE` or below it returns to normal.
+  The gap between the two avoids flapping. The camera itself captures less too (most of the heat).
+- **No sound history**: built, then removed after testing (owner: not understandable, not
+  needed). The live level and "last sound" are enough. R15 is dropped.
+- **Alarm sound**: the system sound picker, without "Silent"; "Default" follows the phone's alarm
+  sound. A chosen sound that can no longer be read falls back to the phone's alarm sound, checked
+  when the alarm starts.
+- **Language**: the app declares English and German (`generateLocaleConfig`), so Android offers a
+  per-app language; English is the fallback for every other language.
+- **Galaxy Flip Flex mode** (`androidx.window`): only a half-open, horizontal fold counts. The
+  parent shows the video above the fold, the baby its preview, everything else goes below.
+
 ## Open points for later phases
 
 - **F-Droid and prebuilt libwebrtc.** F-Droid builds from source and is strict about prebuilt

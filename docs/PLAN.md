@@ -57,7 +57,7 @@ One APK serves both roles; everything below is in scope for v1 unless marked.
 | R12 | Devices discover each other automatically on the LAN; the user never types an IP address. |
 | R13 | Each parent shows when the last sound above its threshold happened ("Last sound 4 min ago"): on the watch screen, in PiP and in the ongoing notification. |
 | R14 | Each parent sets its own noise threshold with a slider beside a live level meter. An optional "Only play sound above threshold" mode mutes everything quieter. |
-| R15 | Parents see the sound level live and can expand a short history of the last 30 minutes. *(Phase 7; may be deferred to v1.1 if time is short.)* |
+| R15 | ~~Parents can expand a short history of the last 30 minutes.~~ Dropped after testing in phase 7 (see DECISIONS). |
 | R16 | Every screen works in portrait and landscape, on phones and tablets. Rotating never interrupts the stream. |
 | R17 | The UI is minimal: video and sound level are the content, everything else stays small and out of the way. |
 | R18 | A parent may be paired with several baby devices and monitors one at a time. |
@@ -216,7 +216,6 @@ Use only stock Jetpack Compose Material 3 components with a fixed colour scheme 
 **Sound level display (parent)**
 
 - Live: a thin bar under the video (along the side in landscape) that follows the `level` messages, with the threshold as a small tick. "Last sound 4 min ago" sits next to it.
-- History (phase 7): tapping the bar expands a strip with the last 30 minutes of level (the peak of every 5 s, 360 values), the threshold as a dashed line and sound events as dots. Drawn with a Compose `Canvas`; kept in memory in the parent service only, never stored.
 
 **Layouts and orientation**
 
@@ -272,7 +271,7 @@ Silence must never be ambiguous: either a parent hears the baby, or the parent's
 Apply from phase 1 and keep through every phase.
 
 - Manifest: `android:allowBackup="false"`, `android:exported="false"` on both services, only the launcher activity exported, `usesCleartextTraffic="false"`. Release builds have `debuggable=false`.
-- Release build: `isMinifyEnabled = false` until the app-size work in phase 7, which turns on R8 with keep rules for libwebrtc (see "App size").
+- Release build: R8 on (since phase 7) with keep rules for libwebrtc, no obfuscation (see "App size").
 - Network: TLS 1.3 only, mutual authentication, fingerprint pinning, no trust-all code path outside the pairing handler, handshake and read timeouts, connection and frame size limits as specified above.
 - Pairing: nonces from `SecureRandom`, reveal only after the peer's commitment, commitment verified before deriving the SAS, store only after both confirmations.
 - Input: every network message is parsed into a typed class; names capped at 32 characters and treated as plain text; unknown types ignored.
@@ -329,7 +328,7 @@ Pin every dependency to an exact version that has been released for at least 14 
 
 ## Implementation phases
 
-Seven phases, each ending in an installable APK that the user tests on two real phones before the next phase starts. Security comes in phase 3, before background operation, so that no later phase is built on an unauthenticated transport.
+Eight phases, each ending in an installable APK that the user tests on two real phones before the next phase starts. Security comes in phase 3, before background operation, so that no later phase is built on an unauthenticated transport.
 
 1. **Skeleton and CI**: Compose app with onboarding (device name, permissions, battery exemption), role picker, empty Baby and Parent screens built on window size classes from the start; settings and trust-store DataStore files; Keystore identity created on first launch; Gradle CLI build; GitHub Actions workflow producing a signed APK on tags.
    - Done when: the APK from CI installs on a phone, remembers name and last role, and a second tagged build installs as an update over it.
@@ -343,8 +342,16 @@ Seven phases, each ending in an installable APK that the user tests on two real 
    - Done when: turning off the baby phone's Wi-Fi makes the parent alarm within the grace period, turning it back on reconnects without user action, force-stopping the baby app alarms, and with the gate on quiet noises stay silent while a loud sound plays in full.
 6. **Multiple parents and video gating**: `watching` messages, per-sender `active` flag, camera stops when nobody watches, parent limit with `busy`, connected-parents list on the baby screen.
    - Done when: three parents connect at once, only those in foreground or PiP receive video, and the baby phone stays below the thermal `SEVERE` state for one hour.
-7. **Polish**: app size (see "App size"), thermal fallback, sound history (R15), alarm settings, camera switch, German strings reviewed, README with install and limitations, edge cases from testing.
+7. **Polish**: app size (see "App size"), thermal fallback, alarm settings, camera switch, German strings reviewed, README with install and limitations, edge cases from testing.
    - Galaxy Flip (foldables, owner's request): Flex mode when half folded (`androidx.window` `FoldingFeature`): parent shows the video on the upper half and level, last sound and controls on the lower half; baby stands half folded with the camera on the upright half and its screen off or a small status below the fold. Check the layouts on the Flip's cover screen (small, nearly square window) for both roles. Test on the Flip 7.
+
+8. **Watching from outside, over a VPN (owner's request)**: no Hausfunk server. Whoever wants to watch from away sets up a VPN to the home network (WireGuard on the router, Tailscale with a subnet router, …); the phones then reach each other as on the LAN, and the end-to-end security stays exactly as it is.
+   - Remember each paired baby's last working address (and port) persistently, in the settings file next to the trust store, never in the pairing data. Discovery does not cross a VPN.
+   - Paired babies that are not found are still tappable ("Not found · tap to try"); the parent then tries the remembered address, and the usual reconnection and alarm rules apply.
+   - The baby's port stays the same across restarts (a fixed default, chosen again only if taken), so a remembered address keeps working.
+   - The "this phone is not on Wi-Fi" alarm text is not used while a VPN carries the connection.
+   - README: a short guide for WireGuard and Tailscale; the baby phone needs no VPN when the router (or a home device) is the VPN endpoint.
+   - Done when: a parent on mobile data with the VPN on watches the baby at home with sound and video, and the alarm rings when the baby goes offline.
 
 Do not hand the APK to anyone outside the household before phase 3 is done: until then, anyone on the Wi-Fi can watch.
 
@@ -367,7 +374,6 @@ Unit tests cover the logic that can fail silently; everything else is accepted b
 - [ ] Whisper-level sound 2 m from the baby phone is audible on the parent.
 - [ ] Gate mode with a threshold set while the baby sleeps: turning over and breathing stay silent, crying plays in full.
 - [ ] "Last sound" updates within 1 second of a sound and keeps counting correctly with the screen off.
-- [ ] Sound history shows the last 30 minutes with the threshold line and sound events (if R15 was built).
 - [ ] Rotating parent and baby phones during streaming: no interruption, picture stays upright.
 - [ ] Every screen is usable on a tablet in both orientations and on a phone in landscape.
 - [ ] Wi-Fi off on the baby phone: every parent alarms within the grace period.
@@ -388,7 +394,7 @@ Run the whole checklist on at least one Android 12 or 13 device and one Android 
 
 v1 stays LAN-only and one-way, but nothing in it may block internet use or two-way media later.
 
-**Later goals (not v1)**: WebRTC over the internet through a self-hostable signaling relay and TURN server; two-way audio and video; possibly a browser client.
+**Later goals (not v1)**: watching from outside over the user's own VPN (phase 8; a self-hosted relay/TURN server was considered and dropped as not worth its upkeep); two-way audio and video; possibly a browser client.
 
 **Design rules for v1** (each costs nothing now)
 
@@ -397,7 +403,7 @@ v1 stays LAN-only and one-way, but nothing in it may block internet use or two-w
 - ICE servers are configuration, not constants: v1 uses host candidates only.
 - Media direction is negotiated per transceiver. v1 sets baby `sendonly` and parent `recvonly`; adding a parent camera or microphone later changes only the transceiver directions.
 - Roles are device states, not separate code paths.
-- Pairing data holds device ID, name and certificate only, never IP addresses or network details. The last-known-address cache is runtime state outside the trust store.
+- Pairing data holds device ID, name and certificate only, never IP addresses or network details. The last-known-address cache lives outside the trust store (runtime state until phase 8, then a settings entry).
 
 ## Decisions (formerly open questions)
 

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
@@ -53,6 +54,10 @@ import dev.wendelin.hausfunk.media.BabyState
 import dev.wendelin.hausfunk.pairing.PairingState
 import dev.wendelin.hausfunk.ui.common.PermissionHint
 import dev.wendelin.hausfunk.ui.common.VideoView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.currentStateAsState
+import dev.wendelin.hausfunk.ui.common.rememberHalfOpenFoldTop
 import dev.wendelin.hausfunk.ui.common.rememberMissingPermissions
 import dev.wendelin.hausfunk.ui.pairing.PairingContent
 import kotlinx.coroutines.flow.filterNotNull
@@ -122,6 +127,26 @@ private fun BabyScreen(
         ScreenOff(onWake = { onScreenOff(false) })
         return
     }
+    val foldTop = rememberHalfOpenFoldTop()
+    if (foldTop != null && missing.isEmpty()) {
+        // Galaxy Flip standing half open: the picture above the fold, everything else below it.
+        Surface(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize()) {
+                Preview(state, session, Modifier.fillMaxWidth().height(foldTop).background(Color.Black))
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .navigationBarsPadding()
+                        .padding(horizontal = 24.dp, vertical = 16.dp),
+                ) {
+                    Status(state)
+                    Spacer(Modifier.weight(1f))
+                    Controls(state, session, missing, onScreenOff, onStop, onOpenSettings)
+                }
+            }
+        }
+        return
+    }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -150,60 +175,91 @@ private fun BabyScreen(
                     PermissionHint(missing, baby = true)
                     Spacer(Modifier.weight(1f))
                 } else {
-                    // The baby's own picture, so the phone can be placed well.
-                    Box(
+                    Preview(
+                        state,
+                        session,
                         Modifier
                             .weight(1f)
                             .fillMaxWidth()
                             .background(Color.Black, MaterialTheme.shapes.large),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        if (session != null && state.cameraAvailable) {
-                            VideoView(session.eglBase, session::attachPreview, session::detachPreview, Modifier.fillMaxSize())
-                        }
-                    }
+                    )
                     Spacer(Modifier.height(16.dp))
-                    val parent = state.parentName
-                    Text(
-                        stringResource(if (parent != null) R.string.baby_streaming else R.string.baby_waiting),
-                        style = MaterialTheme.typography.headlineSmall,
-                    )
-                    Text(
-                        when {
-                            state.failed -> stringResource(R.string.baby_failed)
-                            !state.cameraAvailable -> stringResource(R.string.baby_no_camera)
-                            state.cameraError -> stringResource(R.string.baby_camera_error)
-                            parent != null -> stringResource(R.string.baby_connected_to, parent)
-                            else -> stringResource(R.string.baby_no_parents)
-                        },
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = if (state.failed || state.cameraError) {
-                            MaterialTheme.colorScheme.error
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                    )
+                    Status(state)
                 }
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(top = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (state.canSwitchCamera) {
-                        IconButton(onClick = { session?.switchCamera() }) {
-                            Icon(Icons.Outlined.Cameraswitch, contentDescription = stringResource(R.string.baby_switch_camera))
-                        }
-                    }
-                    Spacer(Modifier.weight(1f))
-                    OutlinedButton(onClick = { onScreenOff(true) }, enabled = missing.isEmpty()) {
-                        Text(stringResource(R.string.baby_screen_off))
-                    }
-                    Button(onClick = onStop) { Text(stringResource(R.string.baby_stop)) }
-                }
+                Spacer(Modifier.height(16.dp))
+                Controls(state, session, missing, onScreenOff, onStop, onOpenSettings = null)
             }
         }
+    }
+}
+
+/** The baby's own picture, so the phone can be placed well. */
+@Composable
+private fun Preview(state: BabyState, session: BabySession?, modifier: Modifier) {
+    Box(modifier, contentAlignment = Alignment.Center) {
+        // Only while the screen is really visible: the preview keeps the camera on.
+        val visible = LocalLifecycleOwner.current.lifecycle.currentStateAsState().value
+            .isAtLeast(Lifecycle.State.STARTED)
+        if (session != null && state.cameraAvailable && visible) {
+            VideoView(session.eglBase, session::attachPreview, session::detachPreview, Modifier.fillMaxSize())
+        }
+    }
+}
+
+@Composable
+private fun Status(state: BabyState) {
+    val parents = state.parents
+    Text(
+        stringResource(if (parents.isNotEmpty()) R.string.baby_streaming else R.string.baby_waiting),
+        style = MaterialTheme.typography.headlineSmall,
+    )
+    Text(
+        when {
+            state.failed -> stringResource(R.string.baby_failed)
+            !state.cameraAvailable -> stringResource(R.string.baby_no_camera)
+            state.cameraError -> stringResource(R.string.baby_camera_error)
+            parents.isNotEmpty() -> stringResource(R.string.baby_connected_to, parents.joinToString(", "))
+            else -> stringResource(R.string.baby_no_parents)
+        },
+        style = MaterialTheme.typography.bodyLarge,
+        color = if (state.failed || state.cameraError) {
+            MaterialTheme.colorScheme.error
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        },
+    )
+}
+
+/** Camera switch, screen off and stop; [onOpenSettings] only where there is no top bar for it. */
+@Composable
+private fun Controls(
+    state: BabyState,
+    session: BabySession?,
+    missing: List<String>,
+    onScreenOff: (Boolean) -> Unit,
+    onStop: () -> Unit,
+    onOpenSettings: (() -> Unit)?,
+) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (onOpenSettings != null) {
+            IconButton(onClick = onOpenSettings) {
+                Icon(Icons.Outlined.Settings, contentDescription = stringResource(R.string.action_settings))
+            }
+        }
+        if (state.canSwitchCamera) {
+            IconButton(onClick = { session?.switchCamera() }) {
+                Icon(Icons.Outlined.Cameraswitch, contentDescription = stringResource(R.string.baby_switch_camera))
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        OutlinedButton(onClick = { onScreenOff(true) }, enabled = missing.isEmpty()) {
+            Text(stringResource(R.string.baby_screen_off))
+        }
+        Button(onClick = onStop) { Text(stringResource(R.string.baby_stop)) }
     }
 }
 

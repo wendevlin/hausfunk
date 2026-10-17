@@ -42,6 +42,9 @@ class LanNetworks(context: Context, private val onChange: () -> Unit) {
         connectivity.registerNetworkCallback(request, callback)
     }
 
+    /** Whether the phone is on any Wi-Fi or Ethernet network at all. */
+    fun hasLan(): Boolean = synchronized(links) { links.isNotEmpty() }
+
     /** The local network whose subnet contains [address]; null if none (then the default is used). */
     fun networkFor(address: InetAddress): Network? = synchronized(links) {
         links.entries.firstOrNull { (_, lp) ->

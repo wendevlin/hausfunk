@@ -48,6 +48,10 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
         store.updateData { it.copy(alarmGraceSeconds = seconds.coerceIn(Settings.ALARM_GRACE_RANGE)) }
     }
 
+    suspend fun setAlarmSound(uri: String?) {
+        store.updateData { it.copy(alarmSound = uri) }
+    }
+
     /** Changes the stored sound settings of [deviceId] with [change], atomically. */
     suspend fun updateSound(deviceId: String, change: (SoundPrefs) -> SoundPrefs) {
         store.updateData { settings ->

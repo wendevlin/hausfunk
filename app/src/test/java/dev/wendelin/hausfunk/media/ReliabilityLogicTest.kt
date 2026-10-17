@@ -190,3 +190,4 @@ class LossAlarmTest {
         assertEquals(AlarmState.OFF, a.state)
     }
 }
+
