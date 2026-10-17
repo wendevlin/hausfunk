@@ -123,6 +123,12 @@ class ParentSession(
 
     /** Video frames arrive on the current connection; false again after every loss. */
     val videoArriving: StateFlow<Boolean> = _videoArriving.asStateFlow()
+    private val history = SoundHistory()
+    private val _history = MutableStateFlow<List<SoundHistory.Bucket>>(emptyList())
+
+    /** The last 30 minutes of level, refreshed every 5 s; gaps where nothing arrived. */
+    val soundHistory: StateFlow<List<SoundHistory.Bucket>> = _history.asStateFlow()
+    private var historyBucket = -1L
     private val _noLan = MutableStateFlow(false)
 
     /** This phone itself has no Wi-Fi: the alarm says so instead of blaming the baby. */
@@ -168,6 +174,8 @@ class ParentSession(
         target = baby
         backoff.reset()
         detector.reset()
+        history.clear()
+        _history.value = emptyList()
         applyGate()
         lossAlarm.graceMs = graceMs
         lossAlarm.reset(resume)
@@ -463,6 +471,13 @@ class ParentSession(
                     _level.value = db
                     detector.onLevel(db, now)
                     _lastSound.value = detector.lastSoundAt
+                    history.add(db, detector.sounding, now)
+                    // Republished once per bucket, which is all the strip can show.
+                    val bucket = now / SoundHistory.BUCKET_MS
+                    if (bucket != historyBucket) {
+                        historyBucket = bucket
+                        _history.value = history.snapshot(now)
+                    }
                     applyGate()
                 }
                 else -> Unit

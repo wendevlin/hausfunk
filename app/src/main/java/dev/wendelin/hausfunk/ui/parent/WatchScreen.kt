@@ -96,6 +96,7 @@ fun WatchScreen(
     val lastSound by session.lastSound.collectAsState()
     val status by session.status.collectAsState()
     val gateOpen by session.gateOpen.collectAsState()
+    val history by session.soundHistory.collectAsState()
     var soundSettings by rememberSaveable { mutableStateOf(false) }
     ShowOverLockScreen(alarm == AlarmState.RINGING)
     Box(
@@ -180,6 +181,7 @@ fun WatchScreen(
                 lastSound,
                 status,
                 muted = !gateOpen,
+                history = history,
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(12.dp))

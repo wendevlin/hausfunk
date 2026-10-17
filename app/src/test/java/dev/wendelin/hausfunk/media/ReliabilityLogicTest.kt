@@ -190,3 +190,28 @@ class LossAlarmTest {
         assertEquals(AlarmState.OFF, a.state)
     }
 }
+
+class SoundHistoryTest {
+    @Test
+    fun keepsTheLoudestLevelPerBucketAndMarksSounds() {
+        val h = SoundHistory()
+        h.add(-50f, sounding = false, now = 0)
+        h.add(-30f, sounding = true, now = 1_000)
+        h.add(-40f, sounding = false, now = 4_999)
+        val s = h.snapshot(4_999)
+        assertEquals(SoundHistory.BUCKETS, s.size)
+        assertEquals(SoundHistory.Bucket(-30f, true), s.last())
+        assertNull(s[s.size - 2].peak)
+    }
+
+    @Test
+    fun forgetsWhatIsOlderThanHalfAnHour() {
+        val h = SoundHistory()
+        h.add(-20f, sounding = true, now = 0)
+        val later = SoundHistory.BUCKET_MS * SoundHistory.BUCKETS
+        h.add(-60f, sounding = false, now = later)
+        val s = h.snapshot(later)
+        assertTrue(s.none { it.peak == -20f })
+        assertEquals(-60f, s.last().peak)
+    }
+}

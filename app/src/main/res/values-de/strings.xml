@@ -132,4 +132,6 @@
     <string name="alarm_title_no_lan">Dieses Handy ist nicht im WLAN</string>
     <string name="alarm_body_no_lan">Ohne WLAN erreicht Hausfunk %1$s nicht. Verbinde dich mit dem WLAN zu Hause.</string>
     <string name="watch_baby_hot">Das Baby-Handy ist heiß: geringere Bildqualität, bis es abgekühlt ist.</string>
+    <string name="history_start">vor 30 Min.</string>
+    <string name="history_now">jetzt</string>
 </resources>

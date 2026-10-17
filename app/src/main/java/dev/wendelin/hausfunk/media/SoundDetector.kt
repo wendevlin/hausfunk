@@ -16,7 +16,10 @@ class SoundDetector {
         private set
 
     private var aboveSince: Long? = null
-    private var sounding = false
+
+    /** A sound event is going on right now. */
+    var sounding = false
+        private set
     private var openUntil = Long.MIN_VALUE
 
     /** Feeds one level message received at [now]. */
