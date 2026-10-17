@@ -329,7 +329,7 @@ Pin every dependency to an exact version that has been released for at least 14 
 
 ## Implementation phases
 
-Seven phases, each ending in an installable APK that the user tests on two real phones before the next phase starts. Security comes in phase 3, before background operation, so that no later phase is built on an unauthenticated transport.
+Eight phases, each ending in an installable APK that the user tests on two real phones before the next phase starts. Security comes in phase 3, before background operation, so that no later phase is built on an unauthenticated transport.
 
 1. **Skeleton and CI**: Compose app with onboarding (device name, permissions, battery exemption), role picker, empty Baby and Parent screens built on window size classes from the start; settings and trust-store DataStore files; Keystore identity created on first launch; Gradle CLI build; GitHub Actions workflow producing a signed APK on tags.
    - Done when: the APK from CI installs on a phone, remembers name and last role, and a second tagged build installs as an update over it.
@@ -345,6 +345,14 @@ Seven phases, each ending in an installable APK that the user tests on two real 
    - Done when: three parents connect at once, only those in foreground or PiP receive video, and the baby phone stays below the thermal `SEVERE` state for one hour.
 7. **Polish**: app size (see "App size"), thermal fallback, sound history (R15), alarm settings, camera switch, German strings reviewed, README with install and limitations, edge cases from testing.
    - Galaxy Flip (foldables, owner's request): Flex mode when half folded (`androidx.window` `FoldingFeature`): parent shows the video on the upper half and level, last sound and controls on the lower half; baby stands half folded with the camera on the upright half and its screen off or a small status below the fold. Check the layouts on the Flip's cover screen (small, nearly square window) for both roles. Test on the Flip 7.
+
+8. **Internet watch (owner's request)**: watch the baby when the parent is not at home, through a self-hosted **Hausfunk server**. Off by default; without a server configured the app stays LAN-only exactly as before.
+   - Server (separate component in this repository, e.g. `server/`, one container image): a signaling relay that forwards the existing JSON envelopes between devices that are online, plus a TURN server (coturn) for media when no direct path exists. It never sees media or messages in clear: the devices keep their end-to-end authentication (the pinned certificates from pairing, e.g. mutual TLS tunnelled through the relay) and WebRTC's DTLS-SRTP, so a compromised server can at most drop or delay traffic, never watch or impersonate a device.
+   - Auth: one household account on the server (set up once by the owner, e.g. a password or an admin-created invite). Each device gets its own token (revocable on the server), never the household password itself; TURN uses short-lived credentials issued by the server.
+   - App: "Hausfunk server" in the settings, optional: address plus login. The connection-loss alarm, liveness and reconnection apply over the internet too; the parent shows "via internet" when not on the LAN; the LAN path is always tried first.
+   - **Share without logging in again**: a device that is logged in can hand the server to its paired devices over the existing authenticated LAN connection ("Use this server on Mama's phone too"), which then each request their own device token with a one-time code. Alternatively a QR code with the address and a one-time code. Removing a pairing or logging out revokes that device's token.
+   - Security first: the server address and tokens live in private storage, never in logs; the relay is rate-limited; no third-party services. Document running it at home (e.g. behind the router or on a small VPS) in the README.
+   - Done when: a parent on mobile data watches the baby at home with sound and video, the alarm rings when the baby goes offline, a second parent gets the server by sharing without typing anything, and a server operator cannot see the stream.
 
 Do not hand the APK to anyone outside the household before phase 3 is done: until then, anyone on the Wi-Fi can watch.
 
@@ -388,7 +396,7 @@ Run the whole checklist on at least one Android 12 or 13 device and one Android 
 
 v1 stays LAN-only and one-way, but nothing in it may block internet use or two-way media later.
 
-**Later goals (not v1)**: WebRTC over the internet through a self-hostable signaling relay and TURN server; two-way audio and video; possibly a browser client.
+**Later goals (not v1)**: WebRTC over the internet through a self-hostable signaling relay and TURN server (now planned as phase 8); two-way audio and video; possibly a browser client.
 
 **Design rules for v1** (each costs nothing now)
 
