@@ -272,6 +272,27 @@ Owner's request: review everything, remove leftovers, keep it simple, split what
   the grace period ends gets up to 5 s more. If this phone has no Wi-Fi at all, the alarm says
   "This phone is not on Wi-Fi" instead of blaming the baby.
 
+## Phase 7
+
+- **App size: R8 instead of hand-copied icons.** R8 with resource shrinking drops every unused
+  class of `material-icons-extended` by itself, so copying the icons as vector drawables would
+  only add files. `arm64-v8a` only (both household phones and every phone of the last years are
+  arm64). Release APK 47 MB → 16 MB, debug 23 MB.
+- **R8 also on debug builds**, with `-dontobfuscate`: the debug APK is what gets tested, so it must
+  be the same code as the release, and stack traces stay readable. libwebrtc is kept whole (JNI
+  calls into Java by name).
+- **Thermal fallback**: at `THERMAL_STATUS_SEVERE` and above the baby drops to 640×480 at 10 fps
+  and tells the parents (note on the parent screen); at `MODERATE` or below it returns to normal.
+  The gap between the two avoids flapping.
+- **Sound history**: 30 minutes in 5 s buckets (peak level, sound yes/no), kept on the parent in
+  memory per watched baby; it starts empty after the app was closed. Tap the level bar to open it.
+- **Alarm sound**: the system sound picker, without "Silent"; "Default" follows the phone's alarm
+  sound. A chosen sound that is gone falls back to the phone's alarm sound.
+- **Language**: the app declares English and German (`generateLocaleConfig`), so Android offers a
+  per-app language; English is the fallback for every other language.
+- **Galaxy Flip Flex mode** (`androidx.window`): only a half-open, horizontal fold counts. The
+  parent shows the video above the fold, the baby its preview, everything else goes below.
+
 ## Open points for later phases
 
 - **F-Droid and prebuilt libwebrtc.** F-Droid builds from source and is strict about prebuilt

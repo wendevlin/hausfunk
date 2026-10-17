@@ -11,8 +11,8 @@ any reference to them in `README.md`) once the project is done, i.e. after phase
 - **Phases 1 to 3 are merged and passed their gates** on a Galaxy Z Flip 7 and a Galaxy Tab S9
   (Android 16): pairing with emojis both ways, mutual TLS, video and sound. Release path works
   (`0.1.0` → `0.1.1`, bare version tags). Debug builds are a separate app ("Hausfunk (Debug)").
-- **Phases 4 and 5 are merged** (tested by the owner on a Samsung and a Pixel). **Phase 6 is
-  written, not yet tested.** Feedback
+- **Phases 4 and 5 are merged** (tested by the owner on a Samsung and a Pixel). **Phases 6 and 7
+  are written, not yet tested** (PR #10). Feedback
   fixed in the same PR (see DECISIONS, "Phase 4 and 5 test feedback"): 4 bundled emoji images in
   one row, one shared discovery, the "no picture yet" hint after reconnects, a calmer role picker. Phase 4: `BabyService` and `ParentService` own the sessions, wake and
   Wi-Fi locks, "Stop" notification, picture-in-picture, single-pane parent screens, better video,
@@ -36,6 +36,20 @@ Install the debug APK from the PR's CI run on all phones.
 4. A fifth parent gets "already streaming to four parent devices".
 5. The parent list: online babies first with a green dot.
 6. One hour with parents connected: the baby phone does not get hot (thermal `SEVERE`).
+
+## Next steps (human): phase 7 gate
+
+7. The APK is about 16 MB (release) and everything above still works on the R8 build.
+8. Settings → alarm sound: pick another sound; pull the baby's plug and Wi-Fi: the alarm plays
+   that sound. Back to "Default": the phone's alarm sound again.
+9. Parent: tap the sound level; a 30-minute strip opens, loud moments marked.
+10. Android settings → Apps → Hausfunk → Language: switch to English and back.
+11. Galaxy Flip half open (Flex mode), both roles: picture above the fold, controls below.
+    Also look at both roles on the cover screen.
+12. Overnight run (8 h, both screens off, baby plugged in): no dropout, no false alarm.
+
+After the gate: delete `docs/HANDOVER.md`, `docs/PLAN.md` and `docs/DECISIONS.md` and their
+README references, unless phase 8 (VPN) follows first.
 
 ## Notes for the next agent session
 

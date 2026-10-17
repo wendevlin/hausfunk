@@ -272,7 +272,7 @@ Silence must never be ambiguous: either a parent hears the baby, or the parent's
 Apply from phase 1 and keep through every phase.
 
 - Manifest: `android:allowBackup="false"`, `android:exported="false"` on both services, only the launcher activity exported, `usesCleartextTraffic="false"`. Release builds have `debuggable=false`.
-- Release build: `isMinifyEnabled = false` until the app-size work in phase 7, which turns on R8 with keep rules for libwebrtc (see "App size").
+- Release build: R8 on (since phase 7) with keep rules for libwebrtc, no obfuscation (see "App size").
 - Network: TLS 1.3 only, mutual authentication, fingerprint pinning, no trust-all code path outside the pairing handler, handshake and read timeouts, connection and frame size limits as specified above.
 - Pairing: nonces from `SecureRandom`, reveal only after the peer's commitment, commitment verified before deriving the SAS, store only after both confirmations.
 - Input: every network message is parsed into a typed class; names capped at 32 characters and treated as plain text; unknown types ignored.
