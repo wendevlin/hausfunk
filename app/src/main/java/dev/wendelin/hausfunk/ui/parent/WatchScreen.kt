@@ -187,7 +187,14 @@ fun WatchScreen(
             )
         }
         if (alarm != AlarmState.OFF && state is ParentState.WithBaby) {
-            AlarmCard(state.baby.name, ringing = alarm == AlarmState.RINGING, onAcknowledge = session::acknowledgeAlarm, Modifier.align(Alignment.Center))
+            val noLan by session.noLan.collectAsState()
+            AlarmCard(
+                state.baby.name,
+                noLan = noLan,
+                ringing = alarm == AlarmState.RINGING,
+                onAcknowledge = session::acknowledgeAlarm,
+                modifier = Modifier.align(Alignment.Center),
+            )
         } else {
             val message = when (state) {
                 is ParentState.Connecting -> stringResource(R.string.watch_connecting, state.baby.name)
@@ -245,7 +252,13 @@ private fun PipBadge(state: ParentState, lastSound: Long?, modifier: Modifier = 
 
 /** The connection-loss alarm on screen: what happened and "Acknowledge" while it rings. */
 @Composable
-private fun AlarmCard(babyName: String, ringing: Boolean, onAcknowledge: () -> Unit, modifier: Modifier = Modifier) {
+private fun AlarmCard(
+    babyName: String,
+    noLan: Boolean,
+    ringing: Boolean,
+    onAcknowledge: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Column(
         modifier
             .padding(24.dp)
@@ -254,13 +267,13 @@ private fun AlarmCard(babyName: String, ringing: Boolean, onAcknowledge: () -> U
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            stringResource(R.string.alarm_title, babyName),
+            stringResource(if (noLan) R.string.alarm_title_no_lan else R.string.alarm_title, babyName),
             color = MaterialTheme.colorScheme.onErrorContainer,
             style = MaterialTheme.typography.headlineSmall,
             textAlign = TextAlign.Center,
         )
         Text(
-            stringResource(R.string.alarm_body),
+            if (noLan) stringResource(R.string.alarm_body_no_lan, babyName) else stringResource(R.string.alarm_body),
             color = MaterialTheme.colorScheme.onErrorContainer,
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center,

@@ -22,8 +22,9 @@ class ConnectionAlarm(private val context: Context) {
     private val vibrator = context.getSystemService(VibratorManager::class.java).defaultVibrator
     private val notifications = context.getSystemService(NotificationManager::class.java)
 
-    fun start(babyName: String) {
-        notifications.notify(Notifications.ID_ALARM, Notifications.alarm(context, babyName))
+    /** [noLan]: this phone has no Wi-Fi, so the notification names that instead of the baby. */
+    fun start(babyName: String, noLan: Boolean) {
+        notifications.notify(Notifications.ID_ALARM, Notifications.alarm(context, babyName, noLan))
         if (active) return
         active = true
         ringtone = sound()?.apply {

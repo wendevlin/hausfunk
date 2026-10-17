@@ -132,6 +132,7 @@ class ParentService : Service() {
             resolve = { id -> finder.babies.value.firstOrNull { it.deviceId == id } },
             bind = app.lanNetworks::bind,
             onUnpaired = { baby -> app.forgetUnpaired(baby.deviceId, baby.name) },
+            hasLan = app.lanNetworks::hasLan,
         )
         session = s
         app.parentSession.value = s
@@ -158,7 +159,7 @@ class ParentService : Service() {
                 when {
                     // Never on a device that runs as the baby; monitoring as a parent ends there.
                     a == AlarmState.RINGING && BabyService.running -> stopMonitoring()
-                    a == AlarmState.RINGING -> alarm.start((st as? ParentState.WithBaby)?.baby?.name.orEmpty())
+                    a == AlarmState.RINGING -> alarm.start((st as? ParentState.WithBaby)?.baby?.name.orEmpty(), s.noLan.value)
                     else -> alarm.stop()
                 }
             }

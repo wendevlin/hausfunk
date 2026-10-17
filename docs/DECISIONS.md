@@ -267,6 +267,11 @@ Owner's request: review everything, remove leftovers, keep it simple, split what
 - **Paired babies that are online come first in the parent's list**, with a green dot and text;
   offline ones are muted (owner's request).
 
+- **Before the alarm rings, the parent tries hard (owner's request):** every 2 s during the grace
+  period instead of backing off, each network change at once, and an attempt still running when
+  the grace period ends gets up to 5 s more. If this phone has no Wi-Fi at all, the alarm says
+  "This phone is not on Wi-Fi" instead of blaming the baby.
+
 ## Open points for later phases
 
 - **F-Droid and prebuilt libwebrtc.** F-Droid builds from source and is strict about prebuilt

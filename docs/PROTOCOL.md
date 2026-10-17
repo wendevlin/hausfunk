@@ -134,7 +134,10 @@ Liveness and reconnection:
 - The baby drops a parent after 6 s without `ping` (15 s allowed for setup after the `answer`).
 - The parent reconnects on its own with a full new connection: first to the address that last
   worked (3 s connect timeout) if discovery now reports a different one, then to the discovered
-  one. Backoff 1, 2, 4, 8, then every 10 s; a new network triggers an immediate attempt.
+  one. While the alarm is pending (within the grace period) it tries every 2 s, afterwards with
+  backoff 1, 2, 4, 8, then every 10 s; a new network triggers an immediate attempt and restarts
+  discovery. If an attempt is still running when the grace period ends, the alarm waits up to
+  5 s more for it. A phone without any Wi-Fi says so in the alarm.
   After `busy` the parent retries every 10 s.
 
 Several parents (phase 6):

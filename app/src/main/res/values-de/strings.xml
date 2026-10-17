@@ -129,4 +129,6 @@
     <string name="crash_title">Die App ist zuletzt abgestürzt</string>
     <string name="action_copy">Kopieren</string>
     <string name="permissions_missing_parent">Hausfunk braucht Zugriff auf das lokale Netzwerk, um das Babygerät zu finden. Erlaube ihn, um fortzufahren.</string>
+    <string name="alarm_title_no_lan">Dieses Handy ist nicht im WLAN</string>
+    <string name="alarm_body_no_lan">Ohne WLAN erreicht Hausfunk %1$s nicht. Verbinde dich mit dem WLAN zu Hause.</string>
 </resources>

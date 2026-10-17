@@ -91,6 +91,8 @@ class ParentSession(
     private val bind: (Socket, InetAddress) -> Unit,
     /** The baby said it no longer trusts us (it removed the pairing). Watching has ended. */
     private val onUnpaired: (FoundBaby) -> Unit,
+    /** Whether this phone is on any local network; tells the alarm whose side the problem is. */
+    private val hasLan: () -> Boolean,
 ) {
     private val transport = TlsTransport(identity, trustedIds)
     private val context = context.applicationContext
@@ -121,6 +123,10 @@ class ParentSession(
 
     /** Video frames arrive on the current connection; false again after every loss. */
     val videoArriving: StateFlow<Boolean> = _videoArriving.asStateFlow()
+    private val _noLan = MutableStateFlow(false)
+
+    /** This phone itself has no Wi-Fi: the alarm says so instead of blaming the baby. */
+    val noLan: StateFlow<Boolean> = _noLan.asStateFlow()
     private val _gateOpen = MutableStateFlow(true)
 
     /** False while the noise gate mutes the sound (only with "only above threshold" on). */
@@ -143,6 +149,9 @@ class ParentSession(
     private var retry: Future<*>? = null
     private val lossAlarm = LossAlarm()
     private var alarmCheck: Future<*>? = null
+
+    /** The alarm already waited once for an attempt in progress during this loss. */
+    private var lastChanceUsed = false
     private val detector = SoundDetector()
 
     /** The video is on screen (app open or picture-in-picture); otherwise the baby sends sound only. */
@@ -192,6 +201,7 @@ class ParentSession(
      */
     fun onNetworkChanged() = executor.execute {
         networkChanged = true
+        _noLan.value = !hasLan()
         if (target == null) return@execute
         backoff.reset()
         val l = link
@@ -257,6 +267,7 @@ class ParentSession(
         alarmCheck?.cancel(false)
         alarmCheck = null
         lossAlarm.stop()
+        lastChanceUsed = false
         publishAlarm()
         audio.abandonFocus()
         _gateOpen.value = true
@@ -416,6 +427,7 @@ class ParentSession(
         target = l.baby // the address that worked is tried first next time
         backoff.reset()
         lossAlarm.onUp()
+        lastChanceUsed = false
         alarmCheck?.cancel(false)
         alarmCheck = null
         publishAlarm()
@@ -550,7 +562,15 @@ class ParentSession(
         }
         if (wasUp) _status.value = null
         linkDown()
-        retry = executor.schedule(if (busy) BUSY_RETRY_MS else backoff.next()) {
+        // Before the alarm may ring, try every 2 s (each attempt also tries the address discovery
+        // has now); afterwards back off.
+        val alarmPending = lossAlarm.dueIn(SystemClock.elapsedRealtime()) != null
+        val delay = when {
+            busy -> BUSY_RETRY_MS
+            alarmPending -> LOST_RETRY_MS
+            else -> backoff.next()
+        }
+        retry = executor.schedule(delay) {
             retry = null
             if (link == null) attempt()
         }
@@ -568,9 +588,23 @@ class ParentSession(
         val due = lossAlarm.dueIn(SystemClock.elapsedRealtime()) ?: return
         alarmCheck = executor.schedule(due) {
             alarmCheck = null
-            lossAlarm.check(SystemClock.elapsedRealtime())
-            publishAlarm()
+            // An attempt is under way right now: give it a few seconds before ringing.
+            if (link != null && !lastChanceUsed) {
+                lastChanceUsed = true
+                alarmCheck = executor.schedule(LAST_CHANCE_MS) {
+                    alarmCheck = null
+                    ringIfStillLost()
+                }
+                return@schedule
+            }
+            ringIfStillLost()
         }
+    }
+
+    private fun ringIfStillLost() {
+        _noLan.value = !hasLan()
+        lossAlarm.check(SystemClock.elapsedRealtime())
+        publishAlarm()
     }
 
     private fun publishAlarm() {
@@ -603,5 +637,7 @@ class ParentSession(
         const val SETUP_TIMEOUT_MS = 20_000L
         const val FAST_CONNECT_TIMEOUT_MS = 3_000
         const val BUSY_RETRY_MS = 10_000L
+        const val LOST_RETRY_MS = 2_000L
+        const val LAST_CHANCE_MS = 5_000L
     }
 }
