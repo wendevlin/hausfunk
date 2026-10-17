@@ -91,7 +91,7 @@ class BabySession(
 
     /** Shared with the local preview renderer. */
     val eglBase: EglBase = EglBase.create()
-    private val media = BabyMedia(this.context, eglBase) { working ->
+    private val media: BabyMedia = BabyMedia(this.context, eglBase) { working ->
         _state.update { it.copy(cameraError = !working) }
         if (!working) {
             // The capturer stopped itself; open it again after a moment if it is still wanted.
