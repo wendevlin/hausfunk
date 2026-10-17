@@ -97,12 +97,8 @@ fun ParentRoute(
     val newBabies = found.filter { it.deviceId !in trustedIds }
 
     fun watch(deviceId: String) {
-        // Reads the current state, not the values of the composition this function came from: a
-        // remembered click handler once kept the baby from before "X" as "being watched", and
-        // tapping it again did nothing.
-        val current = app.parentSession.value?.state?.value?.babyId
-        // Tapping the baby that is already being watched must not start over; it reconnects on its own.
-        if (deviceId == current) return
+        // The list is only shown while nothing is being watched, so a tap always starts watching.
+        // Read the current discovery state, not the one of the composition this function came from.
         val baby = app.babyFinder.babies.value.firstOrNull { it.deviceId == deviceId } ?: return
         ParentService.watch(context, baby)
     }
