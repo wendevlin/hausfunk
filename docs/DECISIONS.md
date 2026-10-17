@@ -253,6 +253,17 @@ Owner's request: review everything, remove leftovers, keep it simple, split what
   the trust store write finishes, so that first connection cannot be refused (or answered with
   `unpair`) by a slower write on either phone.
 
+## Phase 6
+
+- **Up to 4 parents** as planned (the owner would be fine with 2); the limit is one constant.
+- **"Watching" comes from the parent activity's lifecycle**: started (open or picture-in-picture)
+  means watching; stopped (closed PiP, screen off, another app) means sound only. The parent
+  starts not watching and tells the baby as soon as the video is visible.
+- **The baby's own preview keeps the camera on**, but only while its screen is really visible
+  (started), not while it runs in the background or with "Screen off".
+- **Paired babies that are online come first in the parent's list**, with a green dot and text;
+  offline ones are muted (owner's request).
+
 ## Open points for later phases
 
 - **F-Droid and prebuilt libwebrtc.** F-Droid builds from source and is strict about prebuilt
