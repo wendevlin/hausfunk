@@ -40,6 +40,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import dev.wendelin.hausfunk.media.SoundHistory
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import dev.wendelin.hausfunk.R
 import dev.wendelin.hausfunk.data.SoundPrefs
@@ -141,7 +142,7 @@ fun SoundStatus(
 ) {
     // A tap opens the last 30 minutes above the live bar.
     var expanded by rememberSaveable { mutableStateOf(false) }
-    Column(modifier.clickable { expanded = !expanded }) {
+    Column(modifier.clickable(onClickLabel = stringResource(R.string.history_toggle), role = Role.Button) { expanded = !expanded }) {
         if (expanded) {
             HistoryStrip(history, thresholdDbfs, Modifier.fillMaxWidth().height(64.dp))
             Row(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {

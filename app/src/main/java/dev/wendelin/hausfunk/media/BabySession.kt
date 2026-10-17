@@ -126,6 +126,8 @@ class BabySession(
     private val powerManager = this.context.getSystemService(PowerManager::class.java)
     // Registered with the session's executor, so it is called on the session's thread.
     private val thermalListener = PowerManager.OnThermalStatusChangedListener(::onThermalStatus)
+    /** Removing a listener that was never added throws, e.g. after a failed start. */
+    private var thermalRegistered = false
 
     private val battery = BatteryWatcher(this.context) { executor.execute { peers.values.forEach(::sendStatus) } }
 
@@ -146,6 +148,7 @@ class BabySession(
             thread(name = "baby-accept") { acceptLoop(s) }
             battery.start()
             powerManager.addThermalStatusListener(executor, thermalListener)
+            thermalRegistered = true
             executor.schedule(LEVEL_INTERVAL_MS, ::sendLevel)
             executor.schedule(STATUS_INTERVAL_MS, ::sendStatusPeriodically)
         } catch (e: IOException) {
@@ -250,7 +253,8 @@ class BabySession(
     /** Releases capture, server and advertising; safe to call twice. */
     private fun closeAll() {
         battery.stop()
-        powerManager.removeThermalStatusListener(thermalListener)
+        if (thermalRegistered) powerManager.removeThermalStatusListener(thermalListener)
+        thermalRegistered = false
         advertiser.stop()
         server?.close()
         server = null

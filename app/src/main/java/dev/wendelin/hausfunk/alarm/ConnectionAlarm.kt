@@ -52,14 +52,20 @@ class ConnectionAlarm(private val context: Context) {
         notifications.cancel(Notifications.ID_ALARM)
     }
 
-    /** The chosen sound, else the phone's alarm sound; if there is none, any sound the phone has. */
+    /**
+     * The chosen sound if it can still be read (it may have been deleted), else the phone's alarm
+     * sound (or any sound the phone has).
+     */
     private fun ringtone(): Ringtone? = (
-        listOfNotNull(sound) + listOf(
+        listOfNotNull(sound?.takeIf(::readable)) + listOf(
             RingtoneManager.TYPE_ALARM,
             RingtoneManager.TYPE_RINGTONE,
             RingtoneManager.TYPE_NOTIFICATION,
         ).mapNotNull { RingtoneManager.getDefaultUri(it) }
     ).firstNotNullOfOrNull { RingtoneManager.getRingtone(context, it) }
+
+    private fun readable(uri: Uri): Boolean =
+        runCatching { context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { true } }.getOrNull() == true
 
     private companion object {
         const val TAG = "ConnectionAlarm"

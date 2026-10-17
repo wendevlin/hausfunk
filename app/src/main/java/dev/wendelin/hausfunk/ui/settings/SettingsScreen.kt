@@ -5,7 +5,11 @@ import android.content.Context
 import android.content.Intent
 import android.media.RingtoneManager
 import android.net.Uri
+import android.provider.MediaStore
 import android.provider.Settings.System.DEFAULT_ALARM_ALERT_URI
+import androidx.compose.runtime.produceState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.compose.foundation.clickable
@@ -235,14 +239,23 @@ private fun AlarmSound(uri: String?, onChange: (String?) -> Unit) {
         // Null means the picker was cancelled; the default entry comes back as its own URI.
         if (picked != null) onChange(picked.takeUnless { it == DEFAULT_ALARM_ALERT_URI }?.toString())
     }
-    val title = remember(uri) {
-        uri?.let { runCatching { RingtoneManager.getRingtone(context, it.toUri())?.getTitle(context) }.getOrNull() }
+    // Read from the media database, off the main thread (a Ringtone would open a player for it).
+    val title by produceState<String?>(null, uri) {
+        value = uri?.let { soundTitle(context, it.toUri()) }
     }
     ListItem(
         headlineContent = { Text(stringResource(R.string.settings_alarm_sound)) },
         supportingContent = { Text(title ?: stringResource(R.string.settings_alarm_sound_default)) },
         modifier = Modifier.clickable { picker.launch(uri?.toUri()) },
     )
+}
+
+private suspend fun soundTitle(context: Context, uri: Uri): String? = withContext(Dispatchers.IO) {
+    runCatching {
+        context.contentResolver.query(uri, arrayOf(MediaStore.MediaColumns.TITLE), null, null, null)?.use {
+            if (it.moveToFirst()) it.getString(0) else null
+        }
+    }.getOrNull()
 }
 
 /** The system's alarm sound picker, without "Silent": an alarm nobody hears is no alarm. */

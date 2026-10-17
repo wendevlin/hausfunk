@@ -175,6 +175,7 @@ class ParentSession(
         backoff.reset()
         detector.reset()
         history.clear()
+        historyBucket = -1L
         _history.value = emptyList()
         applyGate()
         lossAlarm.graceMs = graceMs

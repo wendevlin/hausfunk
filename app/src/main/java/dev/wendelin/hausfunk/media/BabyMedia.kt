@@ -107,6 +107,7 @@ class BabyMedia(
     }
 
     private var capturing = false
+    private var reduced = false
 
     /**
      * Starting and stopping the camera happen here: stopping waits for a camera that is still
@@ -123,9 +124,10 @@ class BabyMedia(
         val cam = capturer ?: return
         if (on == capturing) return
         capturing = on
+        val reducedNow = reduced
         cameraControl.execute {
             if (on) {
-                cam.startCapture(WIDTH, HEIGHT, FPS)
+                if (reducedNow) cam.startCapture(REDUCED_WIDTH, REDUCED_HEIGHT, REDUCED_FPS) else cam.startCapture(WIDTH, HEIGHT, FPS)
             } else {
                 try {
                     cam.stopCapture()
@@ -136,11 +138,21 @@ class BabyMedia(
         }
     }
 
-    /** Lower resolution and frame rate while the phone is hot; back to normal when it cooled down. */
+    /**
+     * Lower resolution and frame rate while the phone is hot; back to normal when it cooled down.
+     * The camera itself captures less too, which is where most of the heat comes from.
+     */
     fun setReduced(reduced: Boolean) {
         val source = videoSource ?: return
+        this.reduced = reduced
         if (reduced) source.adaptOutputFormat(REDUCED_WIDTH, REDUCED_HEIGHT, REDUCED_FPS)
         else source.adaptOutputFormat(WIDTH, HEIGHT, FPS)
+        val cam = capturer ?: return
+        if (!capturing) return
+        cameraControl.execute {
+            if (reduced) cam.changeCaptureFormat(REDUCED_WIDTH, REDUCED_HEIGHT, REDUCED_FPS)
+            else cam.changeCaptureFormat(WIDTH, HEIGHT, FPS)
+        }
     }
 
     /** The camera stopped by itself (error, taken away): the next [setCapturing] opens it again. */
