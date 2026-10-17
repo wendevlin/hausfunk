@@ -133,4 +133,5 @@
     <string name="permissions_missing_parent">Hausfunk needs access to the local network to find the baby device. Allow it to continue.</string>
     <string name="alarm_title_no_lan">This phone is not on Wi-Fi</string>
     <string name="alarm_body_no_lan">Hausfunk cannot reach %1$s without Wi-Fi. Connect to the Wi-Fi at home.</string>
+    <string name="watch_baby_hot">The baby phone is hot: lower picture quality until it cools down.</string>
 </resources>

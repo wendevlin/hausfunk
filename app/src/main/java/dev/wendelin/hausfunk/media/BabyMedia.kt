@@ -136,6 +136,13 @@ class BabyMedia(
         }
     }
 
+    /** Lower resolution and frame rate while the phone is hot; back to normal when it cooled down. */
+    fun setReduced(reduced: Boolean) {
+        val source = videoSource ?: return
+        if (reduced) source.adaptOutputFormat(REDUCED_WIDTH, REDUCED_HEIGHT, REDUCED_FPS)
+        else source.adaptOutputFormat(WIDTH, HEIGHT, FPS)
+    }
+
     /** The camera stopped by itself (error, taken away): the next [setCapturing] opens it again. */
     fun onCameraStopped() {
         capturing = false
@@ -215,5 +222,8 @@ class BabyMedia(
         const val WIDTH = 1920
         const val HEIGHT = 1080
         const val FPS = 15
+        const val REDUCED_WIDTH = 640
+        const val REDUCED_HEIGHT = 480
+        const val REDUCED_FPS = 10
     }
 }

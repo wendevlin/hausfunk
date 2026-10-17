@@ -1,6 +1,7 @@
 package dev.wendelin.hausfunk.media
 
 import android.content.Context
+import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
 import dev.wendelin.hausfunk.SerialExecutor
@@ -120,6 +121,12 @@ class BabySession(
     /** After any failed attempt, no pairing for a while: new keys per attempt get no more tries. */
     private var pairingPausedUntil = 0L
 
+    /** The phone is too hot: video is reduced (phase 7 thermal fallback). */
+    private var thermalReduced = false
+    private val powerManager = this.context.getSystemService(PowerManager::class.java)
+    // Registered with the session's executor, so it is called on the session's thread.
+    private val thermalListener = PowerManager.OnThermalStatusChangedListener(::onThermalStatus)
+
     private val battery = BatteryWatcher(this.context) { executor.execute { peers.values.forEach(::sendStatus) } }
 
     fun start(name: String, appVersion: String) = executor.execute {
@@ -138,6 +145,7 @@ class BabySession(
             advertiser.start(ownHello.name, identity.deviceId, s.port)
             thread(name = "baby-accept") { acceptLoop(s) }
             battery.start()
+            powerManager.addThermalStatusListener(executor, thermalListener)
             executor.schedule(LEVEL_INTERVAL_MS, ::sendLevel)
             executor.schedule(STATUS_INTERVAL_MS, ::sendStatusPeriodically)
         } catch (e: IOException) {
@@ -195,6 +203,24 @@ class BabySession(
 
     private fun isCurrent(p: Peer) = peers[p.id] === p
 
+    /**
+     * From SEVERE on, video drops to 640x480 at 10 fps so the phone can cool down; back to normal
+     * at MODERATE or below (the gap avoids switching back and forth). Sound is never touched.
+     */
+    private fun onThermalStatus(status: Int) {
+        if (stopped || !mediaOpen) return
+        val reduce = when {
+            status >= PowerManager.THERMAL_STATUS_SEVERE -> true
+            status <= PowerManager.THERMAL_STATUS_MODERATE -> false
+            else -> thermalReduced
+        }
+        if (reduce == thermalReduced) return
+        thermalReduced = reduce
+        Log.i(TAG, "thermal status $status, video reduced: $reduce")
+        media.setReduced(reduce)
+        peers.values.forEach(::sendStatus)
+    }
+
     /** The camera runs only for someone: a watching parent or the baby's own preview. */
     private fun updateCapture() {
         if (!mediaOpen) return
@@ -224,6 +250,7 @@ class BabySession(
     /** Releases capture, server and advertising; safe to call twice. */
     private fun closeAll() {
         battery.stop()
+        powerManager.removeThermalStatusListener(thermalListener)
         advertiser.stop()
         server?.close()
         server = null
@@ -497,7 +524,7 @@ class BabySession(
 
     private fun sendStatus(p: Peer) {
         val b = battery.current() ?: Battery(-1, false)
-        sendControl(p, Status(battery = b.percent, charging = b.charging, parents = peers.size, thermalReduced = false))
+        sendControl(p, Status(battery = b.percent, charging = b.charging, parents = peers.size, thermalReduced = thermalReduced))
     }
 
     private fun sendStatusPeriodically() {

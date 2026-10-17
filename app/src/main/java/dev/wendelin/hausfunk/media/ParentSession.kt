@@ -49,7 +49,7 @@ import org.webrtc.VideoSink
 import org.webrtc.VideoTrack
 
 /** The baby device's battery, from its last status message. */
-data class BabyStatus(val battery: Int, val charging: Boolean)
+data class BabyStatus(val battery: Int, val charging: Boolean, val hot: Boolean = false)
 
 sealed interface ParentState {
     /** The baby this state is about; null while idle. */
@@ -457,7 +457,7 @@ class ParentSession(
                     l.lastPong = now
                     if (!l.alive) onUp(l)
                 }
-                is Status -> _status.value = BabyStatus(message.battery.coerceIn(-1, 100), message.charging)
+                is Status -> _status.value = BabyStatus(message.battery.coerceIn(-1, 100), message.charging, message.thermalReduced)
                 is Level -> {
                     val db = message.dbfs.takeIf { it.isFinite() }?.coerceIn(LevelMeter.FLOOR_DBFS, 0f) ?: return
                     _level.value = db
