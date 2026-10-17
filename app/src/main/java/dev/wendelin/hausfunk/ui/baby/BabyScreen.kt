@@ -40,62 +40,53 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.wendelin.hausfunk.HausfunkApplication
 import dev.wendelin.hausfunk.R
-import dev.wendelin.hausfunk.data.Role
+import dev.wendelin.hausfunk.service.BabyService
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.flow.MutableStateFlow
 import dev.wendelin.hausfunk.media.BabySession
 import dev.wendelin.hausfunk.media.BabyState
 import dev.wendelin.hausfunk.pairing.PairingState
 import dev.wendelin.hausfunk.ui.common.PermissionHint
 import dev.wendelin.hausfunk.ui.common.VideoView
-import dev.wendelin.hausfunk.ui.common.appVersion
 import dev.wendelin.hausfunk.ui.common.rememberMissingPermissions
 import dev.wendelin.hausfunk.ui.pairing.PairingContent
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 
 /**
- * Runs the baby session while the screen is shown (phase 4 moves it into a foreground service)
- * and only once every needed permission is granted. A parent asking to pair takes over the screen
- * once there are emojis to compare.
+ * The baby screen. Monitoring itself runs in [BabyService], started here once every permission is
+ * granted (Android only lets camera and microphone services start from a visible screen). Back
+ * leaves monitoring running; only "Stop" (here or in the notification) ends it. A parent asking
+ * to pair takes over the screen once there are emojis to compare.
  */
 @Composable
-fun BabyRoute(app: HausfunkApplication, deviceName: String, onStop: () -> Unit, onOpenSettings: () -> Unit) {
+fun BabyRoute(app: HausfunkApplication, onStop: () -> Unit, onOpenSettings: () -> Unit) {
+    val context = LocalContext.current
+    val activity = LocalActivity.current
     val missing = rememberMissingPermissions(baby = true)
-    var state by remember { mutableStateOf(BabyState()) }
-    var session by remember { mutableStateOf<BabySession?>(null) }
-    if (missing.isEmpty()) {
-        val context = LocalContext.current
-        val view = LocalView.current
-        DisposableEffect(Unit) {
-            val job = app.appScope.launch {
-                val identity = app.identity.await()
-                app.trustedIds.filterNotNull().first() // pinning needs the stored pairings
-                val s = BabySession(context, identity, app::currentTrustedIds) { app.storePaired(it, Role.PARENT) }
-                try {
-                    session = s
-                    s.start(deviceName, appVersion(context))
-                    launch { app.trustedIds.filterNotNull().collect { s.onTrustChanged(it) } }
-                    s.state.collect { state = it }
-                } finally {
-                    s.stop()
-                }
-            }
-            // TEMPORARY until phase 4: the session lives in the activity, so the screen stays on.
-            view.keepScreenOn = true
-            onDispose {
-                view.keepScreenOn = false
-                job.cancel()
-                session = null
-                state = BabyState()
-            }
-        }
+    val session by app.babySession.collectAsState()
+    val state by remember(session) { session?.state ?: MutableStateFlow(BabyState()) }.collectAsState()
+    val stop = {
+        BabyService.stop(context)
+        onStop()
     }
+    LaunchedEffect(missing.isEmpty()) {
+        if (missing.isNotEmpty()) return@LaunchedEffect
+        if (app.babySession.value == null) BabyService.start(context)
+        // Once running, a stop from elsewhere (the notification) leaves this screen too.
+        app.babySession.filterNotNull().first()
+        app.babySession.first { it == null }
+        onStop()
+    }
+    // Leaving the screen must not stop monitoring: back just moves the app out of the way.
+    BackHandler { activity?.moveTaskToBack(true) }
+    // Kept here, so a pairing request shown in between does not light the screen up again.
+    var screenOff by rememberSaveable { mutableStateOf(false) }
     val pairing = state.pairing
     if (pairing != null) {
         val pairingState by pairing.state.collectAsState()
@@ -113,7 +104,7 @@ fun BabyRoute(app: HausfunkApplication, deviceName: String, onStop: () -> Unit, 
             return
         }
     }
-    BabyScreen(state, session, missing, onStop, onOpenSettings)
+    BabyScreen(state, session, missing, screenOff, { screenOff = it }, stop, onOpenSettings)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -122,12 +113,13 @@ private fun BabyScreen(
     state: BabyState,
     session: BabySession?,
     missing: List<String>,
+    screenOff: Boolean,
+    onScreenOff: (Boolean) -> Unit,
     onStop: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
-    var screenOff by rememberSaveable { mutableStateOf(false) }
     if (screenOff) {
-        ScreenOff(onWake = { screenOff = false })
+        ScreenOff(onWake = { onScreenOff(false) })
         return
     }
     Scaffold(
@@ -155,7 +147,7 @@ private fun BabyScreen(
                     .padding(horizontal = 24.dp, vertical = 16.dp),
             ) {
                 if (missing.isNotEmpty()) {
-                    PermissionHint(missing)
+                    PermissionHint(missing, baby = true)
                     Spacer(Modifier.weight(1f))
                 } else {
                     // The baby's own picture, so the phone can be placed well.
@@ -205,7 +197,7 @@ private fun BabyScreen(
                         }
                     }
                     Spacer(Modifier.weight(1f))
-                    OutlinedButton(onClick = { screenOff = true }, enabled = missing.isEmpty()) {
+                    OutlinedButton(onClick = { onScreenOff(true) }, enabled = missing.isEmpty()) {
                         Text(stringResource(R.string.baby_screen_off))
                     }
                     Button(onClick = onStop) { Text(stringResource(R.string.baby_stop)) }

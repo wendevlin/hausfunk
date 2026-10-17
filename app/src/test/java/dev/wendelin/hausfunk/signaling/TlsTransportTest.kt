@@ -31,7 +31,7 @@ class TlsTransportTest {
 
     @Test
     fun pairedDevicesConnectAndKnowEachOther() {
-        baby.listen { false }.use { server ->
+        baby.listen().use { server ->
             val incoming = server.acceptOne()
             parent.connect(loopback, server.port, TestCerts.BABY_ID).use { client ->
                 val conn = incoming.get(10, TimeUnit.SECONDS)
@@ -49,17 +49,8 @@ class TlsTransportTest {
     }
 
     @Test
-    fun anUnpairedClientIsRejectedInTheHandshake() {
-        baby.listen { false }.use { server ->
-            val incoming = server.acceptOne()
-            assertFailsWith<IOException> { stranger.connect(loopback, server.port, TestCerts.BABY_ID).receive() }
-            assertFailsWith<Exception> { incoming.get(10, TimeUnit.SECONDS) }
-        }
-    }
-
-    @Test
-    fun anUnpairedClientIsAPairingPeerWhileTheWindowIsOpen() {
-        baby.listen { true }.use { server ->
+    fun anUnpairedClientCanOnlyBeAPairingPeer() {
+        baby.listen().use { server ->
             val incoming = server.acceptOne()
             stranger.connect(loopback, server.port, TestCerts.BABY_ID).use {
                 val conn = incoming.get(10, TimeUnit.SECONDS)
@@ -70,8 +61,8 @@ class TlsTransportTest {
     }
 
     @Test
-    fun aPairedClientStaysTrustedWhileTheWindowIsOpen() {
-        baby.listen { true }.use { server ->
+    fun aPairedClientIsTrusted() {
+        baby.listen().use { server ->
             val incoming = server.acceptOne()
             parent.connect(loopback, server.port, TestCerts.BABY_ID).use {
                 assertEquals(PeerClass.TRUSTED, incoming.get(10, TimeUnit.SECONDS).peerClass)
@@ -82,7 +73,7 @@ class TlsTransportTest {
     @Test
     fun theParentRejectsABabyItDidNotExpect() {
         // The stranger listens; the parent expects the baby's certificate.
-        TlsTransport(TestCerts.identity("stranger")) { setOf(TestCerts.PARENT_ID) }.listen { false }.use { server ->
+        TlsTransport(TestCerts.identity("stranger")) { setOf(TestCerts.PARENT_ID) }.listen().use { server ->
             server.acceptOne()
             assertFailsWith<IOException> { parent.connect(loopback, server.port, TestCerts.BABY_ID).receive() }
         }
@@ -91,7 +82,7 @@ class TlsTransportTest {
     @Test
     fun theParentRejectsTheExpectedBabyOnceItIsRemoved() {
         val forgetful = TlsTransport(TestCerts.identity("parent")) { emptySet() }
-        baby.listen { false }.use { server ->
+        baby.listen().use { server ->
             server.acceptOne()
             assertFailsWith<IOException> { forgetful.connect(loopback, server.port, TestCerts.BABY_ID).receive() }
         }
@@ -100,7 +91,7 @@ class TlsTransportTest {
     @Test
     fun pairingConnectionAcceptsAnUnknownBaby() {
         val unknownBaby = TlsTransport(TestCerts.identity("baby")) { emptySet() }
-        unknownBaby.listen { true }.use { server ->
+        unknownBaby.listen().use { server ->
             val incoming = server.acceptOne()
             stranger.connectForPairing(loopback, server.port).use { client ->
                 assertEquals(TestCerts.BABY_ID, client.peerDeviceId)
@@ -112,7 +103,7 @@ class TlsTransportTest {
 
     @Test
     fun oversizeFramesFailAfterTheHandshake() {
-        baby.listen { false }.use { server ->
+        baby.listen().use { server ->
             val incoming = server.acceptOne()
             parent.connect(loopback, server.port, TestCerts.BABY_ID).use { client ->
                 val conn = incoming.get(10, TimeUnit.SECONDS)

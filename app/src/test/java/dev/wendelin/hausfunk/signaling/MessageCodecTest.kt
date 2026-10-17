@@ -15,6 +15,11 @@ class MessageCodecTest {
             Ice("candidate:2", null, 1),
             Busy,
             Bye,
+            Unpair,
+            PairCommit("Y29tbWl0"),
+            PairReveal("bm9uY2U=", "ef".repeat(32), "Papa"),
+            PairConfirm,
+            PairAbort,
         )
         for (message in messages) {
             assertEquals(Decoded.Message(message), MessageCodec.decodeSignaling(MessageCodec.encode(message)))

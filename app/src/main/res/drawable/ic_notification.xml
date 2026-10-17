@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Status-bar icon: the Hausfunk mark (roof, wave, dot) in white, 24dp. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+    <path
+        android:pathData="M24,62 L60,35 L96,62"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="10"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M44,73 A18,18 0,0 1,76 73"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="10"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M52.5,83 A7.5,7.5 0,1 0,67.5 83 A7.5,7.5 0,1 0,52.5 83 Z"
+        android:fillColor="#FFFFFF" />
+</vector>

@@ -40,6 +40,11 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import dev.wendelin.hausfunk.R
 import dev.wendelin.hausfunk.data.DeviceName
+import dev.wendelin.hausfunk.data.Settings
+import androidx.compose.foundation.layout.Column
+import androidx.compose.material3.Slider
+import androidx.compose.runtime.mutableFloatStateOf
+import kotlin.math.roundToInt
 import dev.wendelin.hausfunk.data.Role
 import dev.wendelin.hausfunk.data.TrustedDevice
 import java.text.DateFormat
@@ -51,7 +56,9 @@ fun SettingsScreen(
     deviceName: String,
     deviceId: String?,
     pairedDevices: List<TrustedDevice>,
+    alarmGraceSeconds: Int,
     onBack: () -> Unit,
+    onAlarmGrace: (Int) -> Unit,
     onRenameSelf: (String) -> Unit,
     onRenamePeer: (deviceId: String, name: String) -> Unit,
     onRemovePeer: (deviceId: String) -> Unit,
@@ -103,6 +110,9 @@ fun SettingsScreen(
                         )
                     }
                 }
+                item { HorizontalDivider(Modifier.padding(vertical = 8.dp)) }
+                item { SectionHeader(stringResource(R.string.settings_parent)) }
+                item { AlarmGrace(alarmGraceSeconds, onAlarmGrace) }
                 item { HorizontalDivider(Modifier.padding(vertical = 8.dp)) }
                 item { SectionHeader(stringResource(R.string.settings_paired_devices)) }
                 if (pairedDevices.isEmpty()) {
@@ -179,6 +189,28 @@ fun SettingsScreen(
             },
         )
     }
+}
+
+/** How long a lost connection may stay lost before the alarm rings, in 5 s steps. */
+@Composable
+private fun AlarmGrace(seconds: Int, onChange: (Int) -> Unit) {
+    var value by remember(seconds) { mutableFloatStateOf(seconds.toFloat()) }
+    val range = Settings.ALARM_GRACE_RANGE
+    ListItem(
+        headlineContent = { Text(stringResource(R.string.settings_alarm_grace)) },
+        supportingContent = {
+            Column {
+                Text(stringResource(R.string.settings_alarm_grace_value, value.roundToInt()))
+                Slider(
+                    value = value,
+                    onValueChange = { value = it },
+                    valueRange = range.first.toFloat()..range.last.toFloat(),
+                    steps = (range.last - range.first) / 5 - 1,
+                    onValueChangeFinished = { onChange(value.roundToInt()) },
+                )
+            }
+        },
+    )
 }
 
 @Composable

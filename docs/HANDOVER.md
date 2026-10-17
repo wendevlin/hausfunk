@@ -8,36 +8,51 @@ any reference to them in `README.md`) once the project is done, i.e. after phase
 
 ## Where we are
 
-- **Phases 1 and 2 are merged and passed their gates** on two Android 16 phones. The release
-  path works: `0.1.0` and `0.1.1` built and signed by CI, `0.1.1` installed as an update.
-  Release tags are the bare version (no `v`).
-- **Phase 3 is written and builds, but has not run on a phone yet.** 44 unit tests pass,
-  including SAS test vectors, the pairing state machine and real TLS 1.3 handshakes on the JVM
-  with test certificates. What only phones can show: the Keystore key signing TLS handshakes
-  (see DECISIONS, `DIGEST_NONE`), and pairing over mDNS.
-- Google Play Protect warns when installing the APK ("unknown app"). Long-term fix: Google's
-  developer verification (registering the package name and signing key); see the chat of
-  2026-10-14. Not done yet.
+- **Phases 1 to 3 are merged and passed their gates** on a Galaxy Z Flip 7 and a Galaxy Tab S9
+  (Android 16): pairing with emojis both ways, mutual TLS, video and sound. Release path works
+  (`0.1.0` → `0.1.1`, bare version tags). Debug builds are a separate app ("Hausfunk (Debug)").
+- **Phases 4 and 5 were tested by the owner on a Samsung and a Pixel: they work.** Feedback
+  fixed in the same PR (see DECISIONS, "Phase 4 and 5 test feedback"): 4 bundled emoji images in
+  one row, one shared discovery, the "no picture yet" hint after reconnects, a calmer role picker. Phase 4: `BabyService` and `ParentService` own the sessions, wake and
+  Wi-Fi locks, "Stop" notification, picture-in-picture, single-pane parent screens, better video,
+  media-volume warning. Phase 5: data channel with ping/pong, automatic reconnection with
+  backoff, connection-loss alarm with "Acknowledge", alarm-volume warning, baby battery, live
+  sound level, last sound, noise threshold and gate.
+- Google Play Protect warns when installing ("unknown app"); developer verification with Google
+  is the long-term fix, not done yet.
 
-## Next steps (human): phase 3 gate
+## Next steps (human): phase 4 and 5 gates
 
-Install the debug APK from the PR's CI run on both phones. Debug builds are a separate app
-("Hausfunk (Debug)", red-ringed icon, ID `dev.wendelin.hausfunk.debug`) next to the release app,
-signed with a shared debug key, so later CI builds install as updates. Then:
+Install the debug APK from the PR's CI run on both phones (installs as an update over the
+previous debug build).
 
-1. Close the release app on both phones (swipe it away from recents): it may hold the camera.
-2. Phone A: Baby. It shows its own camera picture. Phone B: Parent. A appears under "Neu in
-   diesem WLAN"; tap it. Both show 7 emojis with names; tap "Passt" on both.
-3. Tap A in B's list: video with sound. Then swap roles: no new pairing is needed.
-4. "Passt nicht" on either phone stores nothing.
-5. Settings → remove the other device while watching: the stream stops at once.
-6. Baby: "Bild aus" turns the screen black; a tap brings it back. Camera switch works.
+Phase 4:
 
-First phone test (2026-10-14, Flip 7 + Tab S9, both Android 16): pairing worked one way; the other
-way found nothing (fixed: role-independent trust); sound but black video in both directions
-(unclear; the release app was installed alongside, see step 1, and the baby preview now shows
-whether the camera delivers); locking the baby stops sound without a warning (expected until
-phases 4 and 5).
+1. Baby phone: Baby (a notification "sending picture and sound" appears). Parent: tap the baby.
+2. Turn both screens off for 30 minutes: sound still arrives.
+3. Parent: Home gesture while watching → picture-in-picture. Close the PiP window → sound
+   continues (notification "Listening to …").
+4. Swipe the app away from recents on both phones: monitoring continues; "Stop" in the
+   notification ends it.
+5. Rotate both phones while streaming: no interruption. Parent in landscape: full-screen video.
+
+Phase 5:
+
+1. Turn off the baby phone's Wi-Fi: within about 15 s the parent alarms (sound, vibration,
+   full-screen). "Acknowledge" silences it; the notification keeps saying "No connection".
+2. Turn the Wi-Fi back on: the parent reconnects by itself and the alarm stops.
+3. Force-stop the baby app (Settings → Apps → Hausfunk (Debug) → Force stop): the parent alarms.
+4. Make a noise at the baby: the level bar moves, "Last sound just now" appears (watch screen,
+   PiP, notification time).
+5. Tune icon on the watch screen: set the threshold mark above the room noise, turn on "Only play
+   sound above the threshold": quiet noises stay silent, a loud sound plays in full and keeps
+   playing for the hold time.
+6. Battery on the watch screen; unplug the charging baby phone → the parent gets a notification.
+7. Turn the parent's alarm volume down: the watch screen warns "Alarm is very quiet".
+
+Uncertain, please check explicitly: whether the Flip 7 keeps the camera running with the screen
+off, whether the video still jumps now and then, and whether the alarm shows over the lock
+screen (Android 14+ may need "full-screen notifications" allowed for the app).
 
 ## Notes for the next agent session
 

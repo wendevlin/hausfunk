@@ -40,7 +40,7 @@ fun rememberMissingPermissions(baby: Boolean): List<String> {
  * request the system may no longer show its dialog, so the button then opens the app settings.
  */
 @Composable
-fun PermissionHint(missing: List<String>, modifier: Modifier = Modifier) {
+fun PermissionHint(missing: List<String>, baby: Boolean, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     var asked by rememberSaveable { mutableStateOf(false) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
@@ -52,7 +52,7 @@ fun PermissionHint(missing: List<String>, modifier: Modifier = Modifier) {
     ) {
         Column(Modifier.padding(16.dp)) {
             Text(
-                stringResource(R.string.permissions_missing),
+                stringResource(if (baby) R.string.permissions_missing else R.string.permissions_missing_parent),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onErrorContainer,
             )

@@ -1,26 +1,40 @@
 package dev.wendelin.hausfunk.ui.common
 
+import android.graphics.Rect
+import android.os.Handler
+import android.os.Looper
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.viewinterop.AndroidView
+import kotlin.math.abs
 import org.webrtc.EglBase
 import org.webrtc.RendererCommon
 import org.webrtc.SurfaceViewRenderer
 import org.webrtc.VideoSink
 
 /**
- * A WebRTC video, letterboxed, never cropped or stretched. SurfaceViewRenderer crops frames to its
- * own aspect ratio, so the view itself is sized to the video's aspect ratio and centred.
- * [attach] and [detach] connect the renderer to the session that owns the video track.
+ * A WebRTC video, letterboxed, never stretched. SurfaceViewRenderer crops frames to its own aspect
+ * ratio, so the view itself is sized to the shown part's aspect ratio and centred. Zooming in
+ * first uses the bars beside the picture, then crops it. [attach] and [detach] connect the
+ * renderer to the session that owns the video track.
  */
 @Composable
 fun VideoView(
@@ -28,38 +42,92 @@ fun VideoView(
     attach: (VideoSink) -> Unit,
     detach: (VideoSink) -> Unit,
     modifier: Modifier = Modifier,
-    onFirstFrame: () -> Unit = {},
+    /**
+     * Width / height of the whole picture as displayed (not of the zoomed part), whenever it
+     * changes noticeably. Picture-in-picture uses it.
+     */
+    onAspectRatio: (Float) -> Unit = {},
+    /** Where the video is drawn, in window coordinates (for the picture-in-picture animation). */
+    onBounds: (Rect) -> Unit = {},
+    zoom: Zoom = Zoom.NONE,
+    /** Set to allow pinch to zoom, drag to move and double tap to reset. */
+    onZoom: ((Zoom) -> Unit)? = null,
 ) {
-    // Width / height of the frames as displayed; 0 until the first frame arrives.
-    var aspectRatio by remember { mutableFloatStateOf(0f) }
-    val firstFrame by rememberUpdatedState(onFirstFrame)
-    Box(modifier, contentAlignment = Alignment.Center) {
+    // The whole picture as displayed; 0 until the first frame arrives. Small changes (WebRTC
+    // scaling 1280x720 to 852x480) are ignored: every new size re-lays out the surface.
+    var video by remember { mutableStateOf(IntSize.Zero) }
+    var box by remember { mutableStateOf(IntSize.Zero) }
+    val zoomSink = remember {
+        val main = Handler(Looper.getMainLooper())
+        ZoomSink { w, h ->
+            // Reported on the decoder thread; Compose state is changed on the main thread.
+            main.post {
+                val old = video
+                val ratio = w.toFloat() / h
+                val oldRatio = if (old.height > 0) old.width.toFloat() / old.height else 0f
+                if (abs(ratio - oldRatio) > ASPECT_TOLERANCE * ratio) video = IntSize(w, h)
+            }
+        }
+    }
+    val region = visibleRegion(zoom, video.width.toFloat(), video.height.toFloat(), box.width.toFloat(), box.height.toFloat())
+    SideEffect { zoomSink.region = region }
+    val shown = if (video.height > 0) region.width * video.width / (region.height * video.height) else 0f
+    val aspectRatio = if (shown.isFinite() && shown > 0f) shown else 0f
+    val currentOnAspectRatio by rememberUpdatedState(onAspectRatio)
+    // The whole picture's ratio: a zoomed part can be as tall as the screen, which picture-in-
+    // picture refuses (it crashed the app).
+    val pictureRatio = if (video.height > 0) video.width.toFloat() / video.height else 0f
+    LaunchedEffect(pictureRatio) { if (pictureRatio > 0f) currentOnAspectRatio(pictureRatio) }
+    val currentZoom by rememberUpdatedState(zoom)
+    // The gesture blocks below live as long as the view; they must call the current handler.
+    val currentOnZoom by rememberUpdatedState(onZoom)
+
+    val gestures = if (onZoom == null) {
+        Modifier
+    } else {
+        Modifier
+            .pointerInput(Unit) {
+                detectTransformGestures { centroid, pan, factor, _ ->
+                    val before = centroid - pan
+                    currentOnZoom?.invoke(
+                        zoomBy(
+                            currentZoom, factor, before.x, before.y, centroid.x, centroid.y,
+                            video.width.toFloat(), video.height.toFloat(), size.width.toFloat(), size.height.toFloat(),
+                        ),
+                    )
+                }
+            }
+            .pointerInput(Unit) { detectTapGestures(onDoubleTap = { currentOnZoom?.invoke(Zoom.NONE) }) }
+    }
+    Box(
+        modifier
+            .onSizeChanged { box = it }
+            .then(gestures),
+        contentAlignment = Alignment.Center,
+    ) {
         AndroidView(
-            modifier = if (aspectRatio > 0f) Modifier.aspectRatio(aspectRatio) else Modifier.fillMaxSize(),
+            modifier = (if (aspectRatio > 0f) Modifier.aspectRatio(aspectRatio) else Modifier.fillMaxSize())
+                .onGloballyPositioned { coordinates ->
+                    val b = coordinates.boundsInWindow()
+                    onBounds(Rect(b.left.toInt(), b.top.toInt(), b.right.toInt(), b.bottom.toInt()))
+                },
             factory = { context ->
                 SurfaceViewRenderer(context).apply {
-                    init(
-                        eglBase.eglBaseContext,
-                        object : RendererCommon.RendererEvents {
-                            override fun onFirstFrameRendered() = firstFrame()
-
-                            // Called on the render thread; Compose state may be written from any thread.
-                            override fun onFrameResolutionChanged(width: Int, height: Int, rotation: Int) {
-                                if (width <= 0 || height <= 0) return
-                                val sideways = rotation % 180 != 0
-                                aspectRatio = if (sideways) height.toFloat() / width else width.toFloat() / height
-                            }
-                        },
-                    )
+                    init(eglBase.eglBaseContext, null)
                     setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT)
                     setEnableHardwareScaler(true)
-                    attach(this)
+                    zoomSink.target = this
+                    attach(zoomSink)
                 }
             },
             onRelease = { renderer ->
-                detach(renderer)
+                detach(zoomSink)
+                zoomSink.target = null
                 renderer.release()
             },
         )
     }
 }
+
+/** Relative aspect-ratio change below which the view keeps its size. */
+private const val ASPECT_TOLERANCE = 0.02f

@@ -41,6 +41,11 @@ data object Busy : SignalingMessage
 @SerialName("bye")
 data object Bye : SignalingMessage
 
+/** "I do not (or no longer) trust you": the sender removed the pairing. Ends the connection. */
+@Serializable
+@SerialName("unpair")
+data object Unpair : SignalingMessage
+
 @Serializable
 @SerialName("pair_commit")
 data class PairCommit(val commitment: String) : SignalingMessage

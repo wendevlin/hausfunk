@@ -26,6 +26,14 @@ class SerialExecutor(name: String) : Executor {
         }
     }
 
+    /** Like [execute], but says whether the task was taken (false after shutdown). */
+    fun tryExecute(command: Runnable): Boolean = try {
+        delegate.execute(command)
+        true
+    } catch (e: RejectedExecutionException) {
+        false
+    }
+
     /** Runs [command] on this thread after [delayMillis]; null after shutdown. Cancel with the result. */
     fun schedule(delayMillis: Long, command: Runnable): Future<*>? = try {
         delegate.schedule(command, delayMillis, TimeUnit.MILLISECONDS)

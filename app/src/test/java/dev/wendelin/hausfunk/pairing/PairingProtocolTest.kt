@@ -48,7 +48,7 @@ class PairingProtocolTest {
         val pEmojis = pSteps.filterIsInstance<PairingStep.Compare>().single()
         val bEmojis = bSteps.filterIsInstance<PairingStep.Compare>().single()
         assertEquals(pEmojis.emojis, bEmojis.emojis)
-        assertEquals(7, pEmojis.emojis.size)
+        assertEquals(Sas.EMOJI_COUNT, pEmojis.emojis.size)
         assertEquals("Kinderzimmer", pEmojis.peerName)
         assertEquals("Papa", bEmojis.peerName)
 

@@ -33,37 +33,55 @@ class TlsTransport(
     private val keyManager = IdentityKeyManager(identity.privateKey, identity.certificate)
 
     /**
-     * Baby side. A client certificate passes the handshake if it is pinned, or while
-     * [allowPairing] says yes; after the handshake the peer is classified again with fresh values.
-     * An unknown peer can only ever reach the pairing exchange, never signaling.
+     * Baby side. Any client certificate completes the handshake, because any device may ask to
+     * pair; afterwards the peer is classified with the current trust store. An unknown peer
+     * ([PeerClass.PAIRING]) can only ever reach the pairing exchange, never signaling.
      */
-    fun listen(allowPairing: () -> Boolean): SignalingServer {
-        val trust = PinningTrustManager { classifyPeer(it, trustedIds(), allowPairing()) != PeerClass.REJECTED }
+    fun listen(): SignalingServer {
+        val trust = PinningTrustManager { true }
         val serverSocket = context(trust).serverSocketFactory.createServerSocket(0) as SSLServerSocket
         serverSocket.enabledProtocols = PROTOCOLS
         serverSocket.needClientAuth = true
-        return Server(serverSocket, allowPairing)
+        return Server(serverSocket)
     }
 
-    /** Parent side: connects to a paired baby; anything but [expectedDeviceId] is rejected. */
-    fun connect(address: InetAddress, port: Int, expectedDeviceId: String): SignalingConnection {
+    /**
+     * Parent side: connects to a paired baby; anything but [expectedDeviceId] is rejected.
+     * [connectTimeoutMs] limits only the TCP connect, so a stale address fails fast. [bind] may
+     * pin the socket to a network before it connects.
+     */
+    fun connect(
+        address: InetAddress,
+        port: Int,
+        expectedDeviceId: String,
+        connectTimeoutMs: Int = HANDSHAKE_TIMEOUT_MS,
+        bind: (Socket) -> Unit = {},
+    ): SignalingConnection {
         val trust = PinningTrustManager { it == expectedDeviceId && it in trustedIds() }
-        return connect(address, port, trust, PeerClass.TRUSTED)
+        return connect(address, port, trust, PeerClass.TRUSTED, connectTimeoutMs, bind)
     }
 
     /**
      * Parent side, pairing only: accepts whatever certificate the baby presents. The emoji
      * comparison is what authenticates it; this context serves this one connection.
      */
-    fun connectForPairing(address: InetAddress, port: Int): SignalingConnection =
-        connect(address, port, PinningTrustManager { true }, PeerClass.PAIRING)
+    fun connectForPairing(address: InetAddress, port: Int, bind: (Socket) -> Unit = {}): SignalingConnection =
+        connect(address, port, PinningTrustManager { true }, PeerClass.PAIRING, HANDSHAKE_TIMEOUT_MS, bind)
 
-    private fun connect(address: InetAddress, port: Int, trust: X509ExtendedTrustManager, peerClass: PeerClass): SignalingConnection {
+    private fun connect(
+        address: InetAddress,
+        port: Int,
+        trust: X509ExtendedTrustManager,
+        peerClass: PeerClass,
+        connectTimeoutMs: Int,
+        bind: (Socket) -> Unit,
+    ): SignalingConnection {
         val socket = context(trust).socketFactory.createSocket() as SSLSocket
         try {
+            bind(socket)
             socket.enabledProtocols = PROTOCOLS
-            socket.connect(InetSocketAddress(address, port), HANDSHAKE_TIMEOUT_MS)
-            return handshake(socket, peerClass)
+            socket.connect(InetSocketAddress(address, port), connectTimeoutMs)
+            return handshake(socket) { peerClass }
         } catch (e: IOException) {
             socket.close()
             throw e
@@ -73,17 +91,14 @@ class TlsTransport(
     private fun context(trust: X509ExtendedTrustManager): SSLContext =
         SSLContext.getInstance("TLSv1.3").apply { init(arrayOf(keyManager), arrayOf(trust), SecureRandom()) }
 
-    private inner class Server(
-        private val serverSocket: SSLServerSocket,
-        private val allowPairing: () -> Boolean,
-    ) : SignalingServer {
+    private inner class Server(private val serverSocket: SSLServerSocket) : SignalingServer {
         override val port: Int get() = serverSocket.localPort
 
         override fun accept(): SignalingServer.Pending {
             val socket = serverSocket.accept() as SSLSocket
             return object : SignalingServer.Pending {
                 override fun handshake(): SignalingConnection = try {
-                    handshake(socket) { deviceId -> classifyPeer(deviceId, trustedIds(), allowPairing()) }
+                    handshake(socket) { deviceId -> classifyPeer(deviceId, trustedIds()) }
                 } catch (e: IOException) {
                     socket.close()
                     throw e
@@ -96,8 +111,6 @@ class TlsTransport(
         override fun close() = serverSocket.close()
     }
 
-    private fun handshake(socket: SSLSocket, peerClass: PeerClass): SignalingConnection = handshake(socket) { peerClass }
-
     private fun handshake(socket: SSLSocket, classify: (String) -> PeerClass): SignalingConnection {
         socket.soTimeout = HANDSHAKE_TIMEOUT_MS
         socket.tcpNoDelay = true
@@ -108,7 +121,6 @@ class TlsTransport(
         val der = certificate.encoded
         val deviceId = Fingerprint.deviceId(der)
         val peerClass = classify(deviceId)
-        if (peerClass == PeerClass.REJECTED) throw IOException("peer not paired")
         socket.soTimeout = SETUP_READ_TIMEOUT_MS
         return Connection(socket, deviceId, Fingerprint.sha256(der), der, peerClass)
     }

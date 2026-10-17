@@ -66,8 +66,14 @@ class PairingRunner(
     private var deadline = 0L
     private var ended = false
 
-    /** [firstMessage]: already read from the connection by someone else (a re-pair request). */
+    /** The emojis were shown at some point; a request that ends earlier is not worth showing. */
+    @Volatile var reachedCompare = false
+        private set
+
+    /** [firstMessage]: already read from the connection by the baby, which dispatches on it. */
     fun start(firstMessage: SignalingMessage? = null) = executor.execute {
+        // Waiting for the other user may take long; the exchange's own timeout covers it.
+        connection.setReadTimeout(0)
         deadline = SystemClock.elapsedRealtime() + TIMEOUT_MS
         timeout = executor.schedule(TIMEOUT_MS) { apply(protocol.reject("timeout")) }
         apply(protocol.start())
@@ -109,8 +115,10 @@ class PairingRunner(
                 } catch (e: IOException) {
                     end(PairingState.Failed)
                 }
-                is PairingStep.Compare ->
+                is PairingStep.Compare -> {
+                    reachedCompare = true
                     _state.value = PairingState.Comparing(step.emojis, step.peerName, confirmed = false, deadline = deadline)
+                }
                 is PairingStep.Paired -> {
                     onPaired(PairedPeer(connection.peerDeviceId, step.peerName, connection.peerCertificate))
                     end(PairingState.Paired(step.peerName))

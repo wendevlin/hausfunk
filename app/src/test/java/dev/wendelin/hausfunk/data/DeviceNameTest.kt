@@ -29,4 +29,14 @@ class DeviceNameTest {
         assertFalse(DeviceName.isValid("\n\t"))
         assertTrue(DeviceName.isValid(" Kinderzimmer "))
     }
+
+    @Test
+    fun serviceNamesFitADnsLabel() {
+        assertEquals("Kinderzimmer", DeviceName.serviceName(" Kinderzimmer "))
+        assertEquals("Hausfunk", DeviceName.serviceName("   "))
+        // 32 three-byte characters are 96 bytes: cut to 21 whole characters (63 bytes).
+        assertEquals("日".repeat(21), DeviceName.serviceName("日".repeat(32)))
+        // Emoji are four bytes and never split.
+        assertEquals("😀".repeat(15), DeviceName.serviceName("😀".repeat(16)))
+    }
 }

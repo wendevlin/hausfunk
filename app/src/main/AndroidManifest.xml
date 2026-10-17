@@ -32,17 +32,31 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Hausfunk"
         android:usesCleartextTraffic="false"
-        tools:targetApi="36">
+        tools:targetApi="37">
 
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden"
+            android:launchMode="singleTask"
+            android:supportsPictureInPicture="true"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".service.BabyService"
+            android:exported="false"
+            android:foregroundServiceType="camera|microphone" />
+        <service
+            android:name=".service.ParentService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+        <receiver
+            android:name=".alarm.AcknowledgeReceiver"
+            android:exported="false" />
     </application>
 </manifest>

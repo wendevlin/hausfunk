@@ -95,7 +95,6 @@ dependencies {
     implementation(libs.androidx.datastore)
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.material3)
-    implementation(libs.compose.material3.windowsize)
     implementation(libs.compose.material.icons.core)
     implementation(libs.compose.material.icons.extended)
     implementation(libs.compose.ui.tooling.preview)
@@ -106,5 +105,4 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlin.test)
-    testImplementation(libs.kotlinx.coroutines.test)
 }
