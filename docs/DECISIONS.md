@@ -248,6 +248,11 @@ Owner's request: review everything, remove leftovers, keep it simple, split what
 - Removed: `kotlinx-coroutines-test` (unused), the renderer's first-frame callback, `disconnect()`,
   `Reconnecting.since`.
 
+- **No "OK" after pairing (owner's request):** the baby goes straight back to its screen and the
+  parent straight to the video. A new pairing is trusted from the moment both confirmed, before
+  the trust store write finishes, so that first connection cannot be refused (or answered with
+  `unpair`) by a slower write on either phone.
+
 ## Open points for later phases
 
 - **F-Droid and prebuilt libwebrtc.** F-Droid builds from source and is strict about prebuilt

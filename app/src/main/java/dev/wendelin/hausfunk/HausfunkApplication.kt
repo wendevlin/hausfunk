@@ -25,6 +25,8 @@ import dev.wendelin.hausfunk.data.Role
 import dev.wendelin.hausfunk.data.TrustedDevice
 import dev.wendelin.hausfunk.pairing.PairedPeer
 import java.util.Base64
+import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.flow.first
 
 /** Holds the app-wide singletons. No DI framework: everything is wired here by hand. */
 class HausfunkApplication : Application() {
@@ -63,11 +65,18 @@ class HausfunkApplication : Application() {
     lateinit var trustedIds: StateFlow<Set<String>?>
         private set
 
-    /** For TLS handshakes, which need a plain answer right now. */
-    fun currentTrustedIds(): Set<String> = trustedIds.value ?: emptySet()
+    /**
+     * Just paired, not yet in [trustedIds]: trusted at once, so the first connection right after
+     * pairing does not race the write to the trust store.
+     */
+    private val justPaired: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
-    /** Stores a peer after both phones confirmed the emojis. */
+    /** For TLS handshakes, which need a plain answer right now. */
+    fun currentTrustedIds(): Set<String> = (trustedIds.value ?: emptySet()) + justPaired
+
+    /** Stores a peer after both phones confirmed the emojis; trusted from this moment on. */
     fun storePaired(peer: PairedPeer, role: Role) {
+        justPaired += peer.deviceId
         val device = TrustedDevice(
             deviceId = peer.deviceId,
             name = peer.name,
@@ -75,7 +84,11 @@ class HausfunkApplication : Application() {
             role = role,
             pairedAt = System.currentTimeMillis(),
         )
-        appScope.launch { trustStore.add(device) }
+        appScope.launch {
+            trustStore.add(device)
+            trustedIds.first { it != null && peer.deviceId in it }
+            justPaired -= peer.deviceId
+        }
     }
 
     /**

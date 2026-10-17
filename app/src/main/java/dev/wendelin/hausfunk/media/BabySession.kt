@@ -278,6 +278,11 @@ class BabySession(
 
     private fun onPairingFinished(runner: PairingRunner, deviceId: String) {
         pairingActive = false
+        if (runner.state.value is PairingState.Paired) {
+            // Done: back to the baby screen without an extra "OK"; the parent connects right away.
+            _state.update { if (it.pairing === runner) it.copy(pairing = null) else it }
+            return
+        }
         if (runner.state.value != PairingState.Failed) return
         val now = SystemClock.elapsedRealtime()
         pairingBlockedUntil[deviceId] = now + PAIRING_BLOCK_MS

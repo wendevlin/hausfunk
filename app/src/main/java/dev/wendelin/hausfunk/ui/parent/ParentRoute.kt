@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -22,6 +23,7 @@ import dev.wendelin.hausfunk.data.TrustedDevice
 import dev.wendelin.hausfunk.discovery.FoundBaby
 import dev.wendelin.hausfunk.identity.Identity
 import dev.wendelin.hausfunk.media.ParentState
+import dev.wendelin.hausfunk.pairing.PairingState
 import dev.wendelin.hausfunk.pairing.ParentPairing
 import dev.wendelin.hausfunk.service.ParentService
 import dev.wendelin.hausfunk.ui.common.AutoPictureInPicture
@@ -59,6 +61,7 @@ fun ParentRoute(
     val session by app.parentSession.collectAsState()
     val state by remember(session) { session?.state ?: MutableStateFlow(ParentState.Idle) }.collectAsState()
     var pairing by remember { mutableStateOf<ParentPairing?>(null) }
+    var pairingBaby by remember { mutableStateOf<FoundBaby?>(null) }
 
     // Click handlers read the current values when tapped, never ones captured earlier.
     fun watch(deviceId: String) {
@@ -71,6 +74,7 @@ fun ParentRoute(
         val id = identity ?: return
         val p = ParentPairing(id, settings.deviceName, app::currentTrustedIds, app.lanNetworks::bind) { app.storePaired(it, Role.BABY) }
         pairing = p
+        pairingBaby = baby
         p.start(baby, app.appScope)
     }
     fun endPairing() {
@@ -83,6 +87,12 @@ fun ParentRoute(
         // A pairing whose screen goes away (e.g. the activity is recreated) ends cleanly.
         DisposableEffect(p) { onDispose { p.cancel() } }
         val pairingState by p.state.collectAsState()
+        // Paired: straight to the video, no "OK" (the new pairing is trusted at once).
+        LaunchedEffect(pairingState) {
+            if (pairingState !is PairingState.Paired) return@LaunchedEffect
+            pairingBaby?.let { ParentService.watch(context, it) }
+            pairing = null
+        }
         BackHandler { endPairing() }
         Surface(Modifier.fillMaxSize()) {
             PairingContent(pairingState, onConfirm = p::confirm, onReject = ::endPairing, onClose = ::endPairing)
