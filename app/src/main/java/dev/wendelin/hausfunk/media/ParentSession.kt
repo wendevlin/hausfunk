@@ -12,6 +12,7 @@ import dev.wendelin.hausfunk.signaling.Ping
 import dev.wendelin.hausfunk.signaling.Pong
 import dev.wendelin.hausfunk.signaling.Status
 import dev.wendelin.hausfunk.signaling.Unpair
+import dev.wendelin.hausfunk.signaling.Watching
 import java.net.InetAddress
 import java.net.Socket
 import java.nio.ByteBuffer
@@ -144,6 +145,9 @@ class ParentSession(
     private var alarmCheck: Future<*>? = null
     private val detector = SoundDetector()
 
+    /** The video is on screen (app open or picture-in-picture); otherwise the baby sends sound only. */
+    @Volatile private var watching = false
+
     /**
      * Starts watching [baby], replacing whatever was watched. [resume] treats it as a connection
      * that already existed (the service was restarted), so the alarm covers it from the start.
@@ -202,6 +206,13 @@ class ParentSession(
     fun acknowledgeAlarm() = executor.execute {
         lossAlarm.acknowledge()
         publishAlarm()
+    }
+
+    /** Call when the video becomes visible or hidden; the baby stops encoding video for us meanwhile. */
+    fun setWatching(visible: Boolean) = executor.execute {
+        if (visible == watching) return@execute
+        watching = visible
+        link?.let { sendControl(it, Watching(visible)) }
     }
 
     fun setGracePeriod(millis: Long) = executor.execute {
@@ -291,7 +302,7 @@ class ParentSession(
                 connection.close()
                 return
             }
-            connection.send(ownHello)
+            connection.send(ownHello.copy(watching = watching))
             while (true) {
                 val message = connection.receive() ?: break
                 if (message is Offer) connection.setReadTimeout(0) // set up; liveness comes from pongs
@@ -455,6 +466,8 @@ class ParentSession(
         if (l.pinging) return
         l.pinging = true
         l.lastPong = SystemClock.elapsedRealtime()
+        // It may have changed since the hello.
+        sendControl(l, Watching(watching))
         ping(l)
     }
 

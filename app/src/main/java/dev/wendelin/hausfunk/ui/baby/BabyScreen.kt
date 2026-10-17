@@ -53,6 +53,9 @@ import dev.wendelin.hausfunk.media.BabyState
 import dev.wendelin.hausfunk.pairing.PairingState
 import dev.wendelin.hausfunk.ui.common.PermissionHint
 import dev.wendelin.hausfunk.ui.common.VideoView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.currentStateAsState
 import dev.wendelin.hausfunk.ui.common.rememberMissingPermissions
 import dev.wendelin.hausfunk.ui.pairing.PairingContent
 import kotlinx.coroutines.flow.filterNotNull
@@ -158,14 +161,17 @@ private fun BabyScreen(
                             .background(Color.Black, MaterialTheme.shapes.large),
                         contentAlignment = Alignment.Center,
                     ) {
-                        if (session != null && state.cameraAvailable) {
+                        // Only while the screen is really visible: the preview keeps the camera on.
+                        val visible = LocalLifecycleOwner.current.lifecycle.currentStateAsState().value
+                            .isAtLeast(Lifecycle.State.STARTED)
+                        if (session != null && state.cameraAvailable && visible) {
                             VideoView(session.eglBase, session::attachPreview, session::detachPreview, Modifier.fillMaxSize())
                         }
                     }
                     Spacer(Modifier.height(16.dp))
-                    val parent = state.parentName
+                    val parents = state.parents
                     Text(
-                        stringResource(if (parent != null) R.string.baby_streaming else R.string.baby_waiting),
+                        stringResource(if (parents.isNotEmpty()) R.string.baby_streaming else R.string.baby_waiting),
                         style = MaterialTheme.typography.headlineSmall,
                     )
                     Text(
@@ -173,7 +179,7 @@ private fun BabyScreen(
                             state.failed -> stringResource(R.string.baby_failed)
                             !state.cameraAvailable -> stringResource(R.string.baby_no_camera)
                             state.cameraError -> stringResource(R.string.baby_camera_error)
-                            parent != null -> stringResource(R.string.baby_connected_to, parent)
+                            parents.isNotEmpty() -> stringResource(R.string.baby_connected_to, parents.joinToString(", "))
                             else -> stringResource(R.string.baby_no_parents)
                         },
                         style = MaterialTheme.typography.bodyLarge,

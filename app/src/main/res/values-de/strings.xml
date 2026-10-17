@@ -68,7 +68,7 @@
     <string name="parent_online">Online · zum Zusehen tippen</string>
     <string name="watch_stop">Zusehen beenden</string>
     <string name="watch_connecting">Verbinde mit %1$s …</string>
-    <string name="watch_busy">%1$s überträgt schon an ein anderes Elterngerät.</string>
+    <string name="watch_busy">%1$s überträgt schon an vier Elterngeräte, mehr geht nicht.</string>
     <string name="pairing_compare_title">Emojis vergleichen</string>
     <string name="pairing_compare_body">Zeigt %1$s dieselben Emojis in derselben Reihenfolge? Tippe auf beiden Geräten auf „Passt“.</string>
     <string name="pairing_match">Passt</string>

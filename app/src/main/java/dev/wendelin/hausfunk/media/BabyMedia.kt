@@ -99,9 +99,30 @@ class BabyMedia(
         videoSource = video
         cam.initialize(helper, context, video.capturerObserver)
         capturer = cam
-        cam.startCapture(WIDTH, HEIGHT, FPS)
+        // Capture starts with setCapturing, once someone wants to see the picture.
         videoTrack = factory.createVideoTrack("video", video).also { track -> previewSinks.forEach(track::addSink) }
         canSwitchCamera = names.size > 1
+    }
+
+    private var capturing = false
+
+    /** Whether the baby's own preview is shown (it needs the camera too). */
+    val hasPreview: Boolean get() = previewSinks.isNotEmpty()
+
+    /** Starts or stops the camera; nobody watching means no camera, less heat and battery. */
+    fun setCapturing(on: Boolean) {
+        val cam = capturer ?: return
+        if (on == capturing) return
+        capturing = on
+        if (on) {
+            cam.startCapture(WIDTH, HEIGHT, FPS)
+        } else {
+            try {
+                cam.stopCapture()
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+        }
     }
 
     /** Front and back camera. */
@@ -121,11 +142,7 @@ class BabyMedia(
 
     /** Releases whatever [start] opened, also after it failed halfway. */
     fun dispose() {
-        try {
-            capturer?.stopCapture()
-        } catch (e: InterruptedException) {
-            Thread.currentThread().interrupt()
-        }
+        setCapturing(false)
         capturer?.dispose()
         videoTrack?.dispose()
         videoSource?.dispose()

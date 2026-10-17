@@ -116,7 +116,7 @@ class ParentService : Service() {
                     return@withContext
                 }
                 val s = session ?: createSession(identity)
-                val hello = Hello(PROTOCOL_VERSION, identity.deviceId, name, appVersion(this@ParentService), watching = true)
+                val hello = Hello(PROTOCOL_VERSION, identity.deviceId, name, appVersion(this@ParentService))
                 s.connect(baby, hello, settings.alarmGraceSeconds * 1_000L, resume)
             }
         }

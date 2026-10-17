@@ -70,7 +70,7 @@
     <string name="parent_online">Online · tap to watch</string>
     <string name="watch_stop">Stop watching</string>
     <string name="watch_connecting">Connecting to %1$s…</string>
-    <string name="watch_busy">%1$s is already streaming to another parent device.</string>
+    <string name="watch_busy">%1$s is already streaming to four parent devices, the most it can.</string>
     <string name="pairing_compare_title">Compare the emojis</string>
     <string name="pairing_compare_body">Does %1$s show the same emojis in the same order? Tap “Match” on both devices.</string>
     <string name="pairing_match">Match</string>

@@ -17,6 +17,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import dev.wendelin.hausfunk.HausfunkApplication
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.currentStateAsState
 import dev.wendelin.hausfunk.data.Role
 import dev.wendelin.hausfunk.data.Settings
 import dev.wendelin.hausfunk.data.TrustedDevice
@@ -108,6 +111,12 @@ fun ParentRoute(
         // Shared by the watch screen and picture-in-picture, so the zoom stays when the app is left.
         var zoom by remember(watchedId) { mutableStateOf(Zoom.NONE) }
         val inPip = rememberInPictureInPicture()
+        // Watching while the video is visible: app started (open or picture-in-picture). Otherwise
+        // the baby sends sound only and may switch its camera off.
+        val visible = LocalLifecycleOwner.current.lifecycle.currentStateAsState().value
+            .isAtLeast(Lifecycle.State.STARTED)
+        LaunchedEffect(s, visible) { s.setWatching(visible) }
+        DisposableEffect(s) { onDispose { s.setWatching(false) } }
         // While zoomed the shown part has another shape than the PiP window, so no source hint.
         AutoPictureInPicture(
             enabled = state is ParentState.Connected,
